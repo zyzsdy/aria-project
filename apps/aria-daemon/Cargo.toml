@@ -1,0 +1,15 @@
+[package]
+name = "aria-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+aria-core = { path = "../../crates/aria-core" }
+aria-model = { path = "../../crates/aria-model" }
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true

@@ -1,0 +1,23 @@
+# Rust
+/target/
+**/target/
+
+# Node / Vite
+/node_modules/
+**/node_modules/
+/apps/aria-desktop/dist/
+
+# Tauri
+/src-tauri/gen/
+/apps/aria-desktop/src-tauri/target/
+
+# Logs and local state
+*.log
+.env
+.env.*
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

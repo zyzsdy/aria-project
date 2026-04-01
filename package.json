@@ -1,0 +1,22 @@
+{
+  "name": "aria-monorepo",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm --filter @aria/desktop build",
+    "typecheck": "pnpm --filter @aria/desktop typecheck",
+    "desktop:dev": "pnpm --filter @aria/desktop tauri dev",
+    "desktop:build": "pnpm --filter @aria/desktop tauri build",
+    "check:rust": "cargo check --workspace",
+    "test:rust": "cargo test --workspace"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
