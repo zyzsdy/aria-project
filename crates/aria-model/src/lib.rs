@@ -56,6 +56,56 @@ define_id!(SessionId);
 define_id!(WindowId);
 define_id!(ConnectionProfileId);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalSize {
+    pub cols: u16,
+    pub rows: u16,
+    pub pixel_width: u16,
+    pub pixel_height: u16,
+}
+
+impl TerminalSize {
+    pub const fn new(cols: u16, rows: u16) -> Self {
+        Self {
+            cols,
+            rows,
+            pixel_width: 0,
+            pixel_height: 0,
+        }
+    }
+}
+
+impl Default for TerminalSize {
+    fn default() -> Self {
+        Self::new(80, 24)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CursorPosition {
+    pub row: u16,
+    pub col: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionTransportKind {
+    LocalPty,
+    Ssh,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionStatus {
+    Starting,
+    Running,
+    Exited,
+    Closed,
+    Failed,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
@@ -92,7 +142,7 @@ pub enum HealthStatus {
 
 #[cfg(test)]
 mod tests {
-    use super::{HealthStatus, SessionId};
+    use super::{HealthStatus, SessionId, SessionStatus, TerminalSize};
 
     #[test]
     fn ids_are_unique() {
@@ -103,5 +153,18 @@ mod tests {
     fn health_status_serializes_as_snake_case() {
         let json = serde_json::to_string(&HealthStatus::Ready).expect("serialize health status");
         assert_eq!(json, "\"ready\"");
+    }
+
+    #[test]
+    fn terminal_size_has_expected_default() {
+        assert_eq!(TerminalSize::default().cols, 80);
+        assert_eq!(TerminalSize::default().rows, 24);
+    }
+
+    #[test]
+    fn session_status_serializes_as_snake_case() {
+        let json =
+            serde_json::to_string(&SessionStatus::Running).expect("serialize session status");
+        assert_eq!(json, "\"running\"");
     }
 }

@@ -15,6 +15,9 @@ pub enum AriaError {
         source: std::io::Error,
     },
 
+    #[error("expected directory at {path}, but found a file")]
+    PathExistsAsFile { path: PathBuf },
+
     #[error("failed to parse config: {0}")]
     ConfigParse(#[source] toml::de::Error),
 

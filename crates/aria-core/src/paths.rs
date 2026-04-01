@@ -49,6 +49,16 @@ impl AppPaths {
 }
 
 fn create_dir(path: &Path) -> Result<()> {
+    if path.is_dir() {
+        return Ok(());
+    }
+
+    if path.exists() {
+        return Err(AriaError::PathExistsAsFile {
+            path: path.to_path_buf(),
+        });
+    }
+
     fs::create_dir_all(path).map_err(|source| AriaError::Io {
         path: path.to_path_buf(),
         source,

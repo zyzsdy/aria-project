@@ -9,7 +9,11 @@ authors.workspace = true
 [dependencies]
 anyhow.workspace = true
 aria-core = { path = "../../crates/aria-core" }
+aria-ipc = { path = "../../crates/aria-ipc" }
 aria-model = { path = "../../crates/aria-model" }
+aria-session = { path = "../../crates/aria-session" }
 clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 tracing.workspace = true

@@ -9,6 +9,8 @@ authors.workspace = true
 [dependencies]
 anyhow.workspace = true
 aria-core = { path = "../../crates/aria-core" }
+aria-ipc = { path = "../../crates/aria-ipc" }
 aria-model = { path = "../../crates/aria-model" }
 clap.workspace = true
 tracing.workspace = true
+tokio.workspace = true
