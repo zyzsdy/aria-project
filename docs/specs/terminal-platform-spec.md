@@ -40,8 +40,7 @@ Aria Terminal 是一个以 Windows 为主、同时支持 macOS 和 Linux 桌面�
 | SSH | 将 SSH shell 也抽象成一种终端 transport | 本地与远程统一成同一 Session 模型 |
 | API | 内部 IPC + 可选 localhost 网关，共用同一 RPC 模型 | 既适合 UI，也适合外部 AI/自动化 |
 | 插件 | 采用能力声明式的 JS/TS 插件系统 | 易写、易分发、易做权限隔离 |
-| 渲染 | 前端自定义终端渲染器，后端输出结构化 diff/snapshot | 性能和可观测性更平衡 |
-| Pretext 的角色 | 用于 UI 文本布局、字体度量、终端字体标定，不承担 VT 核心解析 | 贴合 pretext 擅长的高性能文本测量/排版能力 |
+| 渲染 | 前端自定义终端渲染器；attach 时通过 rehydrate VT payload 恢复，steady-state 消费原生终端字节流；后端维护权威 snapshot/state | 兼顾 TUI 性能、可恢复性与 AI 可观测性 |
 
 ## 4. 总体架构
 
@@ -199,12 +198,12 @@ trait Transport {
 
 - 终端权威状态在后端
 - 前端只保留渲染需要的视口缓存
-- AI 查询默认走后端 snapshot/search API
+- AI 查询默认走后端 snapshot/state/search API
 
 建议：
 
 - 内存中维护 ring buffer scrollback，默认 50k 到 200k 行，可配置
-- 最近快照增量缓存，便于新 viewer 快速附着
+- 最近 rehydrate payload / byte replay 缓存，便于新 viewer 快速附着与断线恢复
 - 可选持久化录制由单独模块提供，不成为主路径强依赖
 
 ### 6.6 SSH Manager
@@ -301,27 +300,6 @@ v1 设计选择：
    负责 viewport、选择、输入法、鼠标事件、滚动和绘制。
 4. `Plugin UI Host`
    加载插件面板、命令和扩展入口。
-
-### 7.3 Pretext 的集成方式
-
-Pretext 应该被明确放在“文本布局与度量层”，而不是终端协议核心：
-
-适合使用 pretext 的地方：
-
-1. 标签页标题、命令面板、连接描述、设置界面等普通 UI 文本布局。
-2. 字体切换后快速测量 monospace 字体的实际 metrics，用于计算 cell width / line height。
-3. 截断、省略、软换行、富文本说明块等高频 UI 排版。
-4. 插件 UI 里需要高性能文本测量的场景。
-
-不建议把 pretext 放在每一帧终端 cell 绘制主循环里，因为：
-
-- 终端主体是离散 cell grid，不是段落流式排版。
-- 终端渲染性能瓶颈更常出在 glyph atlas、diff 应用和 viewport 滚动。
-
-结论：
-
-- `pretext` 是 UI typography engine 和 terminal font metrics calibrator。
-- 真正的 terminal renderer 仍然是 grid-based renderer。
 
 ## 8. API 设计
 
@@ -594,14 +572,15 @@ v1 建议先支持：
 
 交付：
 
+- session attach / rehydrate / byte stream 协议
 - Tauri 单窗口
 - 终端 canvas 渲染器
 - 字体/主题设置
-- pretext 字体度量接入
 
 验收：
 
 - 正常交互 shell
+- TUI steady-state 不依赖 snapshot 轮询
 - 改字体和配色可即时生效
 
 ### Phase 3: 多标签 / 分屏 / 多窗口
@@ -689,15 +668,13 @@ aria-projects/
 
 ## 15. 需要尽早做的技术验证
 
-在正式进入编码前，建议做 4 个 spike：
+在正式进入编码前，建议做 3 个 spike：
 
 1. Windows PTY spike
    目标：确认主目标平台上的 PTY 创建、resize、关闭和编码行为稳定。
 2. Terminal parser spike
    目标：验证选定 parser 对 shell、TUI、alternate screen、鼠标和大输出的兼容性。
-3. Pretext integration spike
-   目标：验证 pretext 在 Tauri/WebView 中对 monospace metrics 和 UI 文本布局的收益与限制。
-4. JS plugin runtime spike
+3. JS plugin runtime spike
    目标：验证 `rquickjs` 路线的启动时间、隔离成本和宿主 API 设计是否顺手。
 
 ## 16. 当前建议结论
@@ -713,7 +690,6 @@ aria-projects/
 
 ## 17. 参考资料
 
-- Pretext: https://github.com/chenglou/pretext
 - Tauri v2: https://v2.tauri.app/
 - Tauri capabilities: https://v2.tauri.app/learn/security/capabilities-for-windows-and-platforms/
 - Rust `keyring`: https://docs.rs/keyring/latest/keyring/
