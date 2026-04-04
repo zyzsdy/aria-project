@@ -3,18 +3,24 @@
 use anyhow::{anyhow, Context, Result};
 use aria_core::{init_observability, AppRole, BootstrapContext};
 use aria_ipc::{
-    CreateLocalSessionRequest, CreateLocalSessionResponse, DaemonClient, HealthRequest,
-    HealthResponse, ListSessionsRequest, SessionSelector, SessionSnapshot, SessionSummary,
-    DEFAULT_DAEMON_ADDR,
+    AttachViewerRequest, AttachViewerResponse, CreateLocalSessionRequest,
+    CreateLocalSessionResponse, DaemonClient, DetachViewerRequest, HealthRequest,
+    HealthResponse, ListSessionsRequest, RpcRequest, RpcResponse, SessionSelector,
+    SessionResizeRequest, SessionSnapshot, SessionStreamFrame, SessionSummary,
+    SessionWriteRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
-use aria_model::{AppInfo, SessionId, TerminalSize};
+use aria_model::{AppInfo, SessionId, TerminalSize, ViewerId};
 use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::Arc,
     time::Duration,
 };
-use tauri::State;
+use tauri::{ipc::Channel, State};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    net::TcpStream,
+};
 use tracing::info;
 
 #[derive(Clone)]
@@ -97,6 +103,122 @@ async fn get_session_snapshot(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+async fn write_session(
+    state: State<'_, DesktopState>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    let session_id = session_id
+        .parse::<SessionId>()
+        .map_err(|error| format!("invalid session id: {error}"))?;
+    state
+        .daemon
+        .client
+        .write_session(SessionWriteRequest { session_id, data })
+        .await
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn resize_session(
+    state: State<'_, DesktopState>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    let session_id = session_id
+        .parse::<SessionId>()
+        .map_err(|error| format!("invalid session id: {error}"))?;
+    state
+        .daemon
+        .client
+        .resize_session(SessionResizeRequest {
+            session_id,
+            size: TerminalSize::new(cols, rows),
+        })
+        .await
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn attach_session_stream(
+    state: State<'_, DesktopState>,
+    session_id: String,
+    cols: Option<u16>,
+    rows: Option<u16>,
+    replay_from_seq: Option<u64>,
+    stream: Channel<SessionStreamFrame>,
+) -> Result<AttachViewerResponse, String> {
+    state
+        .daemon
+        .attach_session_stream(
+            session_id,
+            TerminalSize::new(cols.unwrap_or(80), rows.unwrap_or(24)),
+            replay_from_seq,
+            stream,
+        )
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn detach_viewer(
+    state: State<'_, DesktopState>,
+    viewer_id: String,
+) -> Result<(), String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    let viewer_id = viewer_id
+        .parse::<ViewerId>()
+        .map_err(|error| format!("invalid viewer id: {error}"))?;
+    state
+        .daemon
+        .client
+        .detach_viewer(DetachViewerRequest { viewer_id })
+        .await
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn viewer_ack(
+    state: State<'_, DesktopState>,
+    viewer_id: String,
+    seq: u64,
+) -> Result<(), String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    let viewer_id = viewer_id
+        .parse::<ViewerId>()
+        .map_err(|error| format!("invalid viewer id: {error}"))?;
+    state
+        .daemon
+        .client
+        .viewer_ack(ViewerAckRequest { viewer_id, seq })
+        .await
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
 fn main() -> Result<()> {
     let app_info = AppInfo::new(
         "Aria Desktop",
@@ -132,7 +254,12 @@ fn main() -> Result<()> {
             daemon_health,
             list_sessions,
             create_local_session,
-            get_session_snapshot
+            get_session_snapshot,
+            write_session,
+            resize_session,
+            attach_session_stream,
+            detach_viewer,
+            viewer_ack
         ])
         .run(tauri::generate_context!())?;
 
@@ -178,6 +305,69 @@ impl DaemonController {
 
         Ok(())
     }
+
+    async fn attach_session_stream(
+        &self,
+        session_id: String,
+        viewport: TerminalSize,
+        replay_from_seq: Option<u64>,
+        stream: Channel<SessionStreamFrame>,
+    ) -> Result<AttachViewerResponse> {
+        self.ensure_ready().await?;
+        let session_id = session_id
+            .parse::<SessionId>()
+            .map_err(|error| anyhow!("invalid session id: {error}"))?;
+        let request = RpcRequest {
+            method: "sessions.attachViewer".to_string(),
+            payload: serde_json::to_value(AttachViewerRequest {
+                session_id,
+                role: aria_ipc::ViewerRole::Interactive,
+                viewport,
+                replay_from_seq,
+                rehydrate_scrollback_lines: Some(200),
+            })?,
+        };
+
+        let mut socket = TcpStream::connect(self.client.addr()).await?;
+        let encoded = serde_json::to_vec(&request)?;
+        socket.write_all(&encoded).await?;
+        socket.write_all(b"\n").await?;
+        socket.flush().await?;
+
+        let mut reader = BufReader::new(socket);
+        let mut line = String::new();
+        reader.read_line(&mut line).await?;
+        let response: AttachViewerResponse = decode_ok_response(&line)?;
+        let viewer_id = response.viewer_id;
+        let client = self.client.clone();
+
+        tokio::spawn(async move {
+            let mut reader = reader;
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match reader.read_line(&mut line).await {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        let frame = match serde_json::from_str::<SessionStreamFrame>(&line) {
+                            Ok(frame) => frame,
+                            Err(_) => break,
+                        };
+                        if stream.send(frame).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+
+            let _ = client
+                .detach_viewer(DetachViewerRequest { viewer_id })
+                .await;
+        });
+
+        Ok(response)
+    }
 }
 
 fn resolve_daemon_binary() -> Option<PathBuf> {
@@ -213,4 +403,21 @@ fn resolve_daemon_binary() -> Option<PathBuf> {
 
 fn is_file(path: &Path) -> bool {
     path.is_file()
+}
+
+fn decode_ok_response<T>(line: &str) -> Result<T>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    let response: RpcResponse = serde_json::from_str(line)?;
+    if !response.ok {
+        return Err(anyhow!(
+            "{}",
+            response.error.unwrap_or_else(|| "unknown daemon error".to_string())
+        ));
+    }
+    let payload = response
+        .payload
+        .ok_or_else(|| anyhow!("daemon returned an empty payload"))?;
+    Ok(serde_json::from_value(payload)?)
 }

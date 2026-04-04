@@ -14,10 +14,32 @@ export const SESSION_STATUSES = [
 ] as const;
 
 export const SESSION_TRANSPORTS = ["local_pty", "ssh"] as const;
+export const VIEWER_ROLES = ["interactive", "observer"] as const;
+export const REHYDRATE_REASONS = [
+  "attach",
+  "resize",
+  "replay-gap",
+  "server-resync"
+] as const;
+export const REPLAY_MODES = ["bytes", "rehydrate"] as const;
+export const BUFFER_KINDS = ["primary", "alternate"] as const;
+export const PAYLOAD_ENCODINGS = ["base64"] as const;
+export const VIEWER_DETACHED_REASONS = [
+  "client-request",
+  "connection-closed",
+  "session-closed",
+  "server-shutdown"
+] as const;
 
 export type HealthStatus = (typeof HEALTH_STATUSES)[number];
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 export type SessionTransportKind = (typeof SESSION_TRANSPORTS)[number];
+export type ViewerRole = (typeof VIEWER_ROLES)[number];
+export type RehydrateReason = (typeof REHYDRATE_REASONS)[number];
+export type ReplayMode = (typeof REPLAY_MODES)[number];
+export type BufferKind = (typeof BUFFER_KINDS)[number];
+export type PayloadEncoding = (typeof PAYLOAD_ENCODINGS)[number];
+export type ViewerDetachedReason = (typeof VIEWER_DETACHED_REASONS)[number];
 
 export interface AppInfo {
   readonly name: string;
@@ -93,3 +115,73 @@ export interface CreateLocalSessionResponse {
   readonly sessionId: string;
   readonly summary: SessionSummary;
 }
+
+export interface AttachViewerResponse {
+  readonly viewerId: string;
+  readonly sessionId: string;
+  readonly acceptedRole: ViewerRole;
+  readonly replayMode: ReplayMode;
+  readonly nextExpectedSeq: number;
+}
+
+export interface SessionStreamMetadata {
+  readonly title: string;
+  readonly status: SessionStatus;
+  readonly cwd: string | null;
+  readonly shell: string;
+  readonly processId: number | null;
+  readonly exitCode: number | null;
+}
+
+export interface SessionMetadataDelta {
+  readonly title?: string;
+  readonly status?: SessionStatus;
+  readonly cwd?: string | null;
+  readonly shell?: string;
+  readonly processId?: number | null;
+  readonly exitCode?: number | null;
+}
+
+export interface TerminalRehydrateFrame {
+  readonly type: "terminal.rehydrate";
+  readonly seq: number;
+  readonly sessionId: string;
+  readonly viewerId: string;
+  readonly reason: RehydrateReason;
+  readonly activeBuffer: BufferKind;
+  readonly size: TerminalSize;
+  readonly payloadEncoding: PayloadEncoding;
+  readonly vtPayload: string;
+  readonly metadata: SessionStreamMetadata;
+}
+
+export interface TerminalBytesFrame {
+  readonly type: "terminal.bytes";
+  readonly seq: number;
+  readonly sessionId: string;
+  readonly viewerId: string;
+  readonly payloadEncoding: PayloadEncoding;
+  readonly bytes: string;
+}
+
+export interface SessionMetadataFrame {
+  readonly type: "session.metadata";
+  readonly seq: number;
+  readonly sessionId: string;
+  readonly viewerId: string;
+  readonly metadata: SessionMetadataDelta;
+}
+
+export interface ViewerDetachedFrame {
+  readonly type: "viewer.detached";
+  readonly seq: number;
+  readonly sessionId: string;
+  readonly viewerId: string;
+  readonly reason: ViewerDetachedReason;
+}
+
+export type SessionStreamFrame =
+  | TerminalRehydrateFrame
+  | TerminalBytesFrame
+  | SessionMetadataFrame
+  | ViewerDetachedFrame;

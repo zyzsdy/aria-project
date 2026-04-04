@@ -12,6 +12,7 @@ pub trait TerminalEngine: Send {
     fn process(&mut self, bytes: &[u8]);
     fn resize(&mut self, size: TerminalSize);
     fn snapshot(&self) -> TerminalSnapshotData;
+    fn rehydrate(&self) -> Vec<u8>;
 }
 
 pub struct Vt100TerminalEngine {
@@ -52,6 +53,16 @@ impl TerminalEngine for Vt100TerminalEngine {
             alternate_screen: screen.alternate_screen(),
         }
     }
+
+    fn rehydrate(&self) -> Vec<u8> {
+        let screen = self.parser.screen();
+        let mut state = Vec::new();
+        if screen.alternate_screen() {
+            state.extend_from_slice(b"\x1b[?1049h");
+        }
+        state.extend_from_slice(&screen.state_formatted());
+        state
+    }
 }
 
 #[cfg(test)]
@@ -80,5 +91,31 @@ mod tests {
             .visible_lines
             .iter()
             .all(|line| line.trim().is_empty()));
+    }
+
+    #[test]
+    fn rehydrate_rebuilds_primary_screen_contents() {
+        let size = TerminalSize::new(20, 4);
+        let mut source = Vt100TerminalEngine::new(size, 128);
+        source.process(b"hello\r\nworld");
+
+        let mut restored = Vt100TerminalEngine::new(size, 128);
+        restored.process(&source.rehydrate());
+
+        assert_eq!(restored.snapshot(), source.snapshot());
+    }
+
+    #[test]
+    fn rehydrate_rebuilds_alternate_screen_contents() {
+        let size = TerminalSize::new(20, 4);
+        let mut source = Vt100TerminalEngine::new(size, 128);
+        source.process(b"\x1b[?1049h");
+        source.process(b"alt-screen");
+
+        let mut restored = Vt100TerminalEngine::new(size, 128);
+        restored.process(&source.rehydrate());
+
+        assert_eq!(restored.snapshot(), source.snapshot());
+        assert!(restored.snapshot().alternate_screen);
     }
 }

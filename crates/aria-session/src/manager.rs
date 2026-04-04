@@ -1,14 +1,22 @@
-use crate::{local_pty::LocalPtyTransport, scrollback::ScrollbackBuffer, transport::Transport};
+use crate::{
+    local_pty::LocalPtyTransport,
+    scrollback::{ScrollbackBuffer, ScrollbackPage},
+    transport::Transport,
+};
 use anyhow::{anyhow, Context, Result};
 use aria_ipc::{
-    CreateLocalSessionRequest, CreateLocalSessionResponse, EmptyResponse, ListSessionsRequest,
-    ListSessionsResponse, ScrollbackStats, SessionMetadata, SessionResizeRequest, SessionSelector,
-    SessionSnapshot, SessionSummary, SessionWriteRequest,
+    AttachViewerRequest, AttachViewerResponse, BufferKind, CreateLocalSessionRequest,
+    CreateLocalSessionResponse, DetachViewerRequest, EmptyResponse, ListSessionsRequest,
+    ListSessionsResponse, ReadScrollbackRequest, ReadScrollbackResponse, ReplayMode,
+    RehydrateReason, ScrollbackLine, ScrollbackStats, SessionMetadata, SessionMetadataDelta,
+    SessionResizeRequest, SessionSelector, SessionSnapshot, SessionStreamFrame,
+    SessionStreamMetadata, SessionSummary, SessionWriteRequest, ViewerAckRequest,
+    ViewerDetachedReason, ViewerRole,
 };
-use aria_model::{SessionId, SessionStatus, TerminalSize};
+use aria_model::{SessionId, SessionStatus, TerminalSize, ViewerId};
 use aria_terminal::{TerminalEngine, Vt100TerminalEngine};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     io::Read,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -18,6 +26,8 @@ use tokio::time::{sleep, Duration};
 use tracing::warn;
 
 const DEFAULT_SCROLLBACK_LINES: usize = 50_000;
+const DEFAULT_REHYDRATE_SCROLLBACK_LINES: usize = 200;
+const REPLAY_LOG_CAPACITY_BYTES: usize = 4 * 1024 * 1024;
 const STARTUP_SNAPSHOT_TIMEOUT_MS: u64 = 1_500;
 const STARTUP_SNAPSHOT_POLL_INTERVAL_MS: u64 = 25;
 
@@ -37,6 +47,14 @@ enum SessionCommand {
     Snapshot(oneshot::Sender<Result<SessionSnapshot>>),
     Metadata(oneshot::Sender<Result<SessionMetadata>>),
     Summary(oneshot::Sender<Result<SessionSummary>>),
+    AttachViewer {
+        request: AttachViewerRequest,
+        stream: mpsc::UnboundedSender<SessionStreamFrame>,
+        reply: oneshot::Sender<Result<AttachViewerResponse>>,
+    },
+    DetachViewer(DetachViewerRequest, oneshot::Sender<Result<()>>),
+    ViewerAck(ViewerAckRequest, oneshot::Sender<Result<()>>),
+    ReadScrollback(ReadScrollbackRequest, oneshot::Sender<Result<ReadScrollbackResponse>>),
     Shutdown(oneshot::Sender<Result<()>>),
     ProcessOutput(Vec<u8>),
     ProcessExit(Option<u32>),
@@ -49,6 +67,42 @@ struct SessionActor {
     metadata: SessionMetadata,
     scrollback: ScrollbackBuffer,
     pending_terminal_query: Vec<u8>,
+    viewers: HashMap<ViewerId, ViewerState>,
+    event_seq: u64,
+    replay_log: ReplayLog,
+}
+
+struct ViewerState {
+    role: ViewerRole,
+    _viewport: TerminalSize,
+    sender: mpsc::UnboundedSender<SessionStreamFrame>,
+    last_ack_seq: u64,
+}
+
+#[derive(Clone)]
+struct ReplayRecord {
+    seq: u64,
+    payload: ReplayPayload,
+    size_bytes: usize,
+}
+
+#[derive(Clone)]
+enum ReplayPayload {
+    Rehydrate {
+        reason: RehydrateReason,
+        active_buffer: BufferKind,
+        size: TerminalSize,
+        vt_payload: Vec<u8>,
+        metadata: SessionStreamMetadata,
+    },
+    Bytes(Vec<u8>),
+    Metadata(SessionMetadataDelta),
+}
+
+struct ReplayLog {
+    capacity_bytes: usize,
+    size_bytes: usize,
+    records: VecDeque<ReplayRecord>,
 }
 
 impl SessionManager {
@@ -68,7 +122,6 @@ impl SessionManager {
             .first()
             .cloned()
             .unwrap_or_else(|| "shell".to_string());
-
         let metadata = SessionMetadata {
             session_id,
             title,
@@ -83,7 +136,6 @@ impl SessionManager {
             process_id: spawn.transport.metadata().process_id,
             exit_code: None,
         };
-
         let actor = SessionActor {
             session_id,
             transport: Box::new(spawn.transport),
@@ -94,8 +146,10 @@ impl SessionManager {
             metadata,
             scrollback: ScrollbackBuffer::new(DEFAULT_SCROLLBACK_LINES),
             pending_terminal_query: Vec::new(),
+            viewers: HashMap::new(),
+            event_seq: 0,
+            replay_log: ReplayLog::new(REPLAY_LOG_CAPACITY_BYTES),
         };
-
         let (sender, receiver) = mpsc::channel(64);
         self.sessions.write().await.insert(
             session_id,
@@ -107,23 +161,17 @@ impl SessionManager {
         spawn_output_reader(spawn.reader, sender.clone());
         spawn_child_waiter(spawn.child, sender);
         self.wait_for_renderable_snapshot(session_id).await;
-
         let summary = self
             .get_summary(session_id)
             .await
             .context("load created session summary")?;
-
-        Ok(CreateLocalSessionResponse {
-            session_id,
-            summary,
-        })
+        Ok(CreateLocalSessionResponse { session_id, summary })
     }
 
     pub async fn list(&self, _request: ListSessionsRequest) -> Result<ListSessionsResponse> {
         let handles = self.sessions.read().await.clone();
         let mut sessions = Vec::with_capacity(handles.len());
         let mut stale = Vec::new();
-
         for (session_id, handle) in handles {
             match request_summary(&handle).await {
                 Ok(summary) => sessions.push(summary),
@@ -133,14 +181,12 @@ impl SessionManager {
                 }
             }
         }
-
         if !stale.is_empty() {
             let mut guard = self.sessions.write().await;
             for session_id in stale {
                 guard.remove(&session_id);
             }
         }
-
         sessions.sort_by(|left, right| left.created_at.cmp(&right.created_at));
         Ok(ListSessionsResponse { sessions })
     }
@@ -153,9 +199,7 @@ impl SessionManager {
             .send(SessionCommand::Snapshot(reply_tx))
             .await
             .map_err(|_| anyhow!("session actor is unavailable"))?;
-        reply_rx
-            .await
-            .map_err(|_| anyhow!("session actor dropped"))?
+        reply_rx.await.map_err(|_| anyhow!("session actor dropped"))?
     }
 
     pub async fn metadata(&self, selector: SessionSelector) -> Result<SessionMetadata> {
@@ -166,9 +210,7 @@ impl SessionManager {
             .send(SessionCommand::Metadata(reply_tx))
             .await
             .map_err(|_| anyhow!("session actor is unavailable"))?;
-        reply_rx
-            .await
-            .map_err(|_| anyhow!("session actor dropped"))?
+        reply_rx.await.map_err(|_| anyhow!("session actor dropped"))?
     }
 
     pub async fn write(&self, request: SessionWriteRequest) -> Result<EmptyResponse> {
@@ -179,9 +221,7 @@ impl SessionManager {
             .send(SessionCommand::Write(request.data.into_bytes(), reply_tx))
             .await
             .map_err(|_| anyhow!("session actor is unavailable"))?;
-        reply_rx
-            .await
-            .map_err(|_| anyhow!("session actor dropped"))??;
+        reply_rx.await.map_err(|_| anyhow!("session actor dropped"))??;
         Ok(EmptyResponse {})
     }
 
@@ -193,15 +233,85 @@ impl SessionManager {
             .send(SessionCommand::Resize(request.size, reply_tx))
             .await
             .map_err(|_| anyhow!("session actor is unavailable"))?;
-        reply_rx
+        reply_rx.await.map_err(|_| anyhow!("session actor dropped"))??;
+        Ok(EmptyResponse {})
+    }
+
+    pub async fn attach_viewer(
+        &self,
+        request: AttachViewerRequest,
+    ) -> Result<(AttachViewerResponse, mpsc::UnboundedReceiver<SessionStreamFrame>)> {
+        let handle = self.handle(request.session_id).await?;
+        let (stream_tx, stream_rx) = mpsc::unbounded_channel();
+        let (reply_tx, reply_rx) = oneshot::channel();
+        handle
+            .sender
+            .send(SessionCommand::AttachViewer {
+                request,
+                stream: stream_tx,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| anyhow!("session actor is unavailable"))?;
+        let response = reply_rx
             .await
             .map_err(|_| anyhow!("session actor dropped"))??;
+        Ok((response, stream_rx))
+    }
+
+    pub async fn detach_viewer(&self, request: DetachViewerRequest) -> Result<EmptyResponse> {
+        let viewer_id = request.viewer_id;
+        self.with_viewer(request.viewer_id, move |handle| async move {
+            let (reply_tx, reply_rx) = oneshot::channel();
+            handle
+                .sender
+                .send(SessionCommand::DetachViewer(
+                    DetachViewerRequest { viewer_id },
+                    reply_tx,
+                ))
+                .await
+                .map_err(|_| anyhow!("session actor is unavailable"))?;
+            reply_rx.await.map_err(|_| anyhow!("session actor dropped"))?
+        })
+        .await?;
         Ok(EmptyResponse {})
+    }
+
+    pub async fn viewer_ack(&self, request: ViewerAckRequest) -> Result<EmptyResponse> {
+        let viewer_id = request.viewer_id;
+        let seq = request.seq;
+        self.with_viewer(request.viewer_id, move |handle| async move {
+            let (reply_tx, reply_rx) = oneshot::channel();
+            handle
+                .sender
+                .send(SessionCommand::ViewerAck(
+                    ViewerAckRequest { viewer_id, seq },
+                    reply_tx,
+                ))
+                .await
+                .map_err(|_| anyhow!("session actor is unavailable"))?;
+            reply_rx.await.map_err(|_| anyhow!("session actor dropped"))?
+        })
+        .await?;
+        Ok(EmptyResponse {})
+    }
+
+    pub async fn read_scrollback(
+        &self,
+        request: ReadScrollbackRequest,
+    ) -> Result<ReadScrollbackResponse> {
+        let handle = self.handle(request.session_id).await?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        handle
+            .sender
+            .send(SessionCommand::ReadScrollback(request, reply_tx))
+            .await
+            .map_err(|_| anyhow!("session actor is unavailable"))?;
+        reply_rx.await.map_err(|_| anyhow!("session actor dropped"))?
     }
 
     pub async fn close(&self, selector: SessionSelector) -> Result<EmptyResponse> {
         let handle = self.handle(selector.session_id).await?;
-
         let (reply_tx, reply_rx) = oneshot::channel();
         if handle
             .sender
@@ -219,14 +329,12 @@ impl SessionManager {
                 return Err(anyhow!("session actor dropped"));
             }
         };
-
         match result {
             Ok(()) => {
                 self.sessions.write().await.remove(&selector.session_id);
             }
             Err(error) => return Err(error),
         }
-
         Ok(EmptyResponse {})
     }
 
@@ -244,26 +352,41 @@ impl SessionManager {
             .ok_or_else(|| anyhow!("unknown session {}", session_id))
     }
 
+    async fn with_viewer<F, Fut>(&self, viewer_id: ViewerId, f: F) -> Result<()>
+    where
+        F: Fn(SessionHandle) -> Fut,
+        Fut: std::future::Future<Output = Result<()>>,
+    {
+        let handles = self.sessions.read().await.clone();
+        let mut last_error = None;
+        for handle in handles.into_values() {
+            match f(handle).await {
+                Ok(()) => return Ok(()),
+                Err(error) if error.to_string().contains("unknown viewer") => {
+                    last_error = Some(error);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(last_error.unwrap_or_else(|| anyhow!("unknown viewer {}", viewer_id)))
+    }
+
     async fn wait_for_renderable_snapshot(&self, session_id: SessionId) {
         let deadline =
             tokio::time::Instant::now() + Duration::from_millis(STARTUP_SNAPSHOT_TIMEOUT_MS);
-
         loop {
             let snapshot = match self.snapshot(SessionSelector { session_id }).await {
                 Ok(snapshot) => snapshot,
                 Err(_) => return,
             };
-
             if snapshot.metadata.status != SessionStatus::Running
                 || snapshot_is_renderable(&snapshot)
             {
                 return;
             }
-
             if tokio::time::Instant::now() >= deadline {
                 return;
             }
-
             sleep(Duration::from_millis(STARTUP_SNAPSHOT_POLL_INTERVAL_MS)).await;
         }
     }
@@ -276,9 +399,12 @@ async fn request_summary(handle: &SessionHandle) -> Result<SessionSummary> {
         .send(SessionCommand::Summary(reply_tx))
         .await
         .map_err(|_| anyhow!("session actor is unavailable"))?;
-    reply_rx
-        .await
-        .map_err(|_| anyhow!("session actor dropped"))?
+    reply_rx.await.map_err(|_| anyhow!("session actor dropped"))?
+}
+
+struct OutputEffects {
+    transport_replies: Vec<Vec<u8>>,
+    stream_bytes: Vec<Vec<u8>>,
 }
 
 async fn run_session_actor(mut actor: SessionActor, mut receiver: mpsc::Receiver<SessionCommand>) {
@@ -294,12 +420,7 @@ async fn run_session_actor(mut actor: SessionActor, mut receiver: mpsc::Receiver
                 let _ = reply.send(result);
             }
             SessionCommand::Resize(size, reply) => {
-                let result = actor.transport.resize(size).await.map(|_| {
-                    actor.terminal.resize(size);
-                    actor.metadata.size = size;
-                    actor.metadata.updated_at = unix_timestamp();
-                });
-                let _ = reply.send(result);
+                let _ = reply.send(actor.resize(size).await);
             }
             SessionCommand::Snapshot(reply) => {
                 let _ = reply.send(Ok(actor.snapshot()));
@@ -310,20 +431,24 @@ async fn run_session_actor(mut actor: SessionActor, mut receiver: mpsc::Receiver
             SessionCommand::Summary(reply) => {
                 let _ = reply.send(Ok(to_summary(&actor.metadata)));
             }
+            SessionCommand::AttachViewer {
+                request,
+                stream,
+                reply,
+            } => {
+                let _ = reply.send(actor.attach_viewer(request, stream).await);
+            }
+            SessionCommand::DetachViewer(request, reply) => {
+                let _ = reply.send(actor.detach_viewer(request.viewer_id));
+            }
+            SessionCommand::ViewerAck(request, reply) => {
+                let _ = reply.send(actor.viewer_ack(request.viewer_id, request.seq));
+            }
+            SessionCommand::ReadScrollback(request, reply) => {
+                let _ = reply.send(Ok(actor.read_scrollback(request)));
+            }
             SessionCommand::Shutdown(reply) => {
-                let result = if matches!(
-                    actor.metadata.status,
-                    SessionStatus::Exited | SessionStatus::Closed | SessionStatus::Failed
-                ) {
-                    actor.metadata.status = SessionStatus::Closed;
-                    actor.metadata.updated_at = unix_timestamp();
-                    Ok(())
-                } else {
-                    actor.transport.shutdown().await.map(|_| {
-                        actor.metadata.status = SessionStatus::Closed;
-                        actor.metadata.updated_at = unix_timestamp();
-                    })
-                };
+                let result = actor.shutdown().await;
                 let should_exit = result.is_ok();
                 let _ = reply.send(result);
                 if should_exit {
@@ -332,73 +457,198 @@ async fn run_session_actor(mut actor: SessionActor, mut receiver: mpsc::Receiver
             }
             SessionCommand::ProcessOutput(bytes) => {
                 let normalized = normalize_terminal_output(&bytes);
-                let replies = actor.process_terminal_output(&normalized);
-                for reply in replies {
+                let output = actor.process_terminal_output(&normalized);
+                for reply in output.transport_replies {
                     if let Err(error) = actor.transport.write(&reply).await {
                         warn!(%actor.session_id, error = %error, "failed to send terminal reply");
                     }
                 }
+                for bytes in output.stream_bytes {
+                    actor.emit_bytes(bytes);
+                }
                 actor.metadata.updated_at = unix_timestamp();
             }
             SessionCommand::ProcessExit(code) => {
-                actor.metadata.status = SessionStatus::Exited;
-                actor.metadata.exit_code = code;
-                actor.metadata.updated_at = unix_timestamp();
+                actor.process_exit(code);
             }
         }
     }
 }
 
 impl SessionActor {
-    fn process_terminal_output(&mut self, bytes: &[u8]) -> Vec<Vec<u8>> {
-        const CPR_QUERY: &[u8] = b"\x1b[6n";
+    async fn attach_viewer(
+        &mut self,
+        mut request: AttachViewerRequest,
+        stream: mpsc::UnboundedSender<SessionStreamFrame>,
+    ) -> Result<AttachViewerResponse> {
+        if request.rehydrate_scrollback_lines.is_none() {
+            request.rehydrate_scrollback_lines = Some(DEFAULT_REHYDRATE_SCROLLBACK_LINES);
+        }
+        let accepted_role = if request.role == ViewerRole::Interactive
+            && self
+                .viewers
+                .values()
+                .any(|viewer| viewer.role == ViewerRole::Interactive)
+        {
+            ViewerRole::Observer
+        } else {
+            request.role
+        };
+        if accepted_role == ViewerRole::Interactive && request.viewport != self.metadata.size {
+            self.transport.resize(request.viewport).await?;
+            self.terminal.resize(request.viewport);
+            self.metadata.size = request.viewport;
+            self.metadata.updated_at = unix_timestamp();
+        }
+        let viewer_id = ViewerId::new();
+        self.viewers.insert(
+            viewer_id,
+            ViewerState {
+                role: accepted_role,
+                _viewport: request.viewport,
+                sender: stream,
+                last_ack_seq: request.replay_from_seq.unwrap_or(0),
+            },
+        );
+        let (replay_mode, next_expected_seq) = if let Some(replay_from_seq) = request.replay_from_seq
+        {
+            match self.replay_log.replay_after(replay_from_seq, self.event_seq) {
+                Some(records) => {
+                    for record in records {
+                        self.send_record_to_viewer(viewer_id, &record)?;
+                    }
+                    (ReplayMode::Bytes, replay_from_seq.saturating_add(1))
+                }
+                None => {
+                    let next = self.event_seq.saturating_add(1);
+                    self.emit_rehydrate_to_viewer(viewer_id, RehydrateReason::ReplayGap)?;
+                    (ReplayMode::Rehydrate, next)
+                }
+            }
+        } else {
+            let next = self.event_seq.saturating_add(1);
+            self.emit_rehydrate_to_viewer(viewer_id, RehydrateReason::Attach)?;
+            (ReplayMode::Rehydrate, next)
+        };
+        Ok(AttachViewerResponse {
+            viewer_id,
+            session_id: self.session_id,
+            accepted_role,
+            replay_mode,
+            next_expected_seq,
+        })
+    }
 
+    fn detach_viewer(&mut self, viewer_id: ViewerId) -> Result<()> {
+        self.viewers
+            .remove(&viewer_id)
+            .map(|_| ())
+            .ok_or_else(|| anyhow!("unknown viewer {}", viewer_id))
+    }
+
+    fn viewer_ack(&mut self, viewer_id: ViewerId, seq: u64) -> Result<()> {
+        let viewer = self
+            .viewers
+            .get_mut(&viewer_id)
+            .ok_or_else(|| anyhow!("unknown viewer {}", viewer_id))?;
+        viewer.last_ack_seq = seq;
+        Ok(())
+    }
+
+    fn read_scrollback(&self, request: ReadScrollbackRequest) -> ReadScrollbackResponse {
+        page_to_response(self.session_id, self.scrollback.read(request.before_line_id, request.limit))
+    }
+
+    async fn resize(&mut self, size: TerminalSize) -> Result<()> {
+        self.transport.resize(size).await?;
+        self.terminal.resize(size);
+        self.metadata.size = size;
+        self.metadata.updated_at = unix_timestamp();
+        if !self.viewers.is_empty() {
+            self.emit_rehydrate(RehydrateReason::Resize);
+        }
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> Result<()> {
+        if matches!(
+            self.metadata.status,
+            SessionStatus::Exited | SessionStatus::Closed | SessionStatus::Failed
+        ) {
+            self.metadata.status = SessionStatus::Closed;
+            self.metadata.updated_at = unix_timestamp();
+        } else {
+            self.transport.shutdown().await?;
+            self.metadata.status = SessionStatus::Closed;
+            self.metadata.updated_at = unix_timestamp();
+        }
+        self.notify_detached(ViewerDetachedReason::SessionClosed);
+        Ok(())
+    }
+
+    fn process_exit(&mut self, code: Option<u32>) {
+        self.metadata.status = SessionStatus::Exited;
+        self.metadata.exit_code = code;
+        self.metadata.updated_at = unix_timestamp();
+        self.emit_metadata(SessionMetadataDelta {
+            title: None,
+            status: Some(SessionStatus::Exited),
+            cwd: None,
+            shell: None,
+            process_id: None,
+            exit_code: code,
+        });
+    }
+
+    fn process_terminal_output(&mut self, bytes: &[u8]) -> OutputEffects {
+        const CPR_QUERY: &[u8] = b"\x1b[6n";
         let mut combined = Vec::with_capacity(self.pending_terminal_query.len() + bytes.len());
         combined.extend_from_slice(&self.pending_terminal_query);
         combined.extend_from_slice(bytes);
         self.pending_terminal_query.clear();
-
-        let mut replies = Vec::new();
+        let mut transport_replies = Vec::new();
+        let mut stream_bytes = Vec::new();
         let mut chunk_start = 0;
         let mut index = 0;
-
         while index < combined.len() {
             if combined[index..].starts_with(CPR_QUERY) {
-                self.process_terminal_chunk(&combined[chunk_start..index]);
-                replies.push(cursor_position_reply(self.terminal.snapshot().cursor));
+                self.process_terminal_chunk(&combined[chunk_start..index], &mut stream_bytes);
+                transport_replies.push(cursor_position_reply(self.terminal.snapshot().cursor));
                 index += CPR_QUERY.len();
                 chunk_start = index;
                 continue;
             }
-
             if combined[index] == 0x1b {
                 let remaining = &combined[index..];
                 if CPR_QUERY.starts_with(remaining) && remaining.len() < CPR_QUERY.len() {
-                    self.process_terminal_chunk(&combined[chunk_start..index]);
+                    self.process_terminal_chunk(&combined[chunk_start..index], &mut stream_bytes);
                     self.pending_terminal_query.extend_from_slice(remaining);
-                    return replies;
+                    return OutputEffects {
+                        transport_replies,
+                        stream_bytes,
+                    };
                 }
             }
-
             index += 1;
         }
-
-        self.process_terminal_chunk(&combined[chunk_start..]);
-        replies
+        self.process_terminal_chunk(&combined[chunk_start..], &mut stream_bytes);
+        OutputEffects {
+            transport_replies,
+            stream_bytes,
+        }
     }
 
-    fn process_terminal_chunk(&mut self, bytes: &[u8]) {
+    fn process_terminal_chunk(&mut self, bytes: &[u8], stream_bytes: &mut Vec<Vec<u8>>) {
         if bytes.is_empty() {
             return;
         }
-
         self.terminal.process(bytes);
         self.scrollback.ingest(bytes);
+        stream_bytes.push(bytes.to_vec());
     }
 
     fn snapshot(&self) -> SessionSnapshot {
         let terminal = self.terminal.snapshot();
-
         SessionSnapshot {
             session_id: self.session_id,
             size: terminal.size,
@@ -411,6 +661,198 @@ impl SessionActor {
             metadata: self.metadata.clone(),
         }
     }
+
+    fn emit_bytes(&mut self, bytes: Vec<u8>) {
+        let record = self.next_record(ReplayPayload::Bytes(bytes));
+        self.broadcast_record(record);
+    }
+
+    fn emit_metadata(&mut self, metadata: SessionMetadataDelta) {
+        let record = self.next_record(ReplayPayload::Metadata(metadata));
+        self.broadcast_record(record);
+    }
+
+    fn emit_rehydrate(&mut self, reason: RehydrateReason) {
+        let record = self.next_record(self.make_rehydrate_payload(reason));
+        self.broadcast_record(record);
+    }
+
+    fn emit_rehydrate_to_viewer(&mut self, viewer_id: ViewerId, reason: RehydrateReason) -> Result<()> {
+        let record = self.next_record(self.make_rehydrate_payload(reason));
+        self.replay_log.push(record.clone());
+        self.send_record_to_viewer(viewer_id, &record)
+    }
+
+    fn make_rehydrate_payload(&self, reason: RehydrateReason) -> ReplayPayload {
+        let snapshot = self.terminal.snapshot();
+        ReplayPayload::Rehydrate {
+            reason,
+            active_buffer: if snapshot.alternate_screen {
+                BufferKind::Alternate
+            } else {
+                BufferKind::Primary
+            },
+            size: self.metadata.size,
+            vt_payload: self.terminal.rehydrate(),
+            metadata: self.stream_metadata(),
+        }
+    }
+
+    fn stream_metadata(&self) -> SessionStreamMetadata {
+        SessionStreamMetadata {
+            title: self.metadata.title.clone(),
+            status: self.metadata.status,
+            cwd: self.metadata.cwd.clone(),
+            shell: self.metadata.shell.clone(),
+            process_id: self.metadata.process_id,
+            exit_code: self.metadata.exit_code,
+        }
+    }
+
+    fn next_record(&mut self, payload: ReplayPayload) -> ReplayRecord {
+        self.event_seq = self.event_seq.saturating_add(1);
+        ReplayRecord {
+            seq: self.event_seq,
+            size_bytes: payload.approx_size_bytes(),
+            payload,
+        }
+    }
+
+    fn broadcast_record(&mut self, record: ReplayRecord) {
+        self.replay_log.push(record.clone());
+        let viewer_ids = self.viewers.keys().copied().collect::<Vec<_>>();
+        let mut stale = Vec::new();
+        for viewer_id in viewer_ids {
+            if self.send_record_to_viewer(viewer_id, &record).is_err() {
+                stale.push(viewer_id);
+            }
+        }
+        for viewer_id in stale {
+            self.viewers.remove(&viewer_id);
+        }
+    }
+
+    fn send_record_to_viewer(&self, viewer_id: ViewerId, record: &ReplayRecord) -> Result<()> {
+        let viewer = self
+            .viewers
+            .get(&viewer_id)
+            .ok_or_else(|| anyhow!("unknown viewer {}", viewer_id))?;
+        let frame = record.payload.to_frame(record.seq, self.session_id, viewer_id);
+        viewer
+            .sender
+            .send(frame)
+            .map_err(|_| anyhow!("viewer stream closed"))?;
+        Ok(())
+    }
+
+    fn notify_detached(&mut self, reason: ViewerDetachedReason) {
+        if self.viewers.is_empty() {
+            return;
+        }
+        self.event_seq = self.event_seq.saturating_add(1);
+        let seq = self.event_seq;
+        let viewers = std::mem::take(&mut self.viewers);
+        for (viewer_id, viewer) in viewers {
+            let _ = viewer.sender.send(SessionStreamFrame::ViewerDetached {
+                seq,
+                session_id: self.session_id,
+                viewer_id,
+                reason,
+            });
+        }
+    }
+}
+
+impl ReplayPayload {
+    fn to_frame(&self, seq: u64, session_id: SessionId, viewer_id: ViewerId) -> SessionStreamFrame {
+        match self {
+            Self::Rehydrate {
+                reason,
+                active_buffer,
+                size,
+                vt_payload,
+                metadata,
+            } => SessionStreamFrame::terminal_rehydrate(
+                seq,
+                session_id,
+                viewer_id,
+                *reason,
+                *active_buffer,
+                *size,
+                vt_payload,
+                metadata.clone(),
+            ),
+            Self::Bytes(bytes) => SessionStreamFrame::terminal_bytes(seq, session_id, viewer_id, bytes),
+            Self::Metadata(metadata) => SessionStreamFrame::SessionMetadata {
+                seq,
+                session_id,
+                viewer_id,
+                metadata: metadata.clone(),
+            },
+        }
+    }
+
+    fn approx_size_bytes(&self) -> usize {
+        match self {
+            Self::Rehydrate { vt_payload, .. } => vt_payload.len() + 512,
+            Self::Bytes(bytes) => bytes.len() + 96,
+            Self::Metadata(_) => 256,
+        }
+    }
+}
+
+impl ReplayLog {
+    fn new(capacity_bytes: usize) -> Self {
+        Self {
+            capacity_bytes,
+            size_bytes: 0,
+            records: VecDeque::new(),
+        }
+    }
+
+    fn push(&mut self, record: ReplayRecord) {
+        self.size_bytes += record.size_bytes;
+        self.records.push_back(record);
+        while self.size_bytes > self.capacity_bytes && self.records.len() > 1 {
+            if let Some(removed) = self.records.pop_front() {
+                self.size_bytes = self.size_bytes.saturating_sub(removed.size_bytes);
+            }
+        }
+    }
+
+    fn replay_after(&self, last_seen_seq: u64, current_seq: u64) -> Option<Vec<ReplayRecord>> {
+        if last_seen_seq >= current_seq {
+            return Some(Vec::new());
+        }
+        let first_seq = self.records.front().map(|record| record.seq)?;
+        if last_seen_seq.saturating_add(1) < first_seq {
+            return None;
+        }
+        Some(
+            self.records
+                .iter()
+                .filter(|record| record.seq > last_seen_seq)
+                .cloned()
+                .collect(),
+        )
+    }
+}
+
+fn page_to_response(session_id: SessionId, page: ScrollbackPage) -> ReadScrollbackResponse {
+    ReadScrollbackResponse {
+        session_id,
+        first_available_line_id: page.first_available_line_id,
+        last_available_line_id: page.last_available_line_id,
+        has_more_above: page.has_more_above,
+        lines: page
+            .lines
+            .into_iter()
+            .map(|line| ScrollbackLine {
+                line_id: line.line_id,
+                text: line.text,
+            })
+            .collect(),
+    }
 }
 
 fn snapshot_is_renderable(snapshot: &SessionSnapshot) -> bool {
@@ -422,7 +864,6 @@ fn snapshot_is_renderable(snapshot: &SessionSnapshot) -> bool {
         .visible_lines
         .iter()
         .any(|line| line.contains('\u{1b}'));
-
     has_visible_text && !contains_raw_escape
 }
 
@@ -500,103 +941,278 @@ fn unix_timestamp() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{line_has_visible_text, normalize_terminal_output, snapshot_is_renderable};
+    use super::{
+        cursor_position_reply, line_has_visible_text, normalize_terminal_output,
+        run_session_actor, snapshot_is_renderable, ReplayLog, SessionActor, SessionCommand,
+    };
+    use crate::scrollback::ScrollbackBuffer;
+    use crate::transport::{Transport, TransportMetadata};
+    use anyhow::Result;
     use aria_ipc::{
-        CreateLocalSessionRequest, ScrollbackStats, SessionMetadata, SessionSelector,
-        SessionSnapshot, SessionWriteRequest,
+        AttachViewerRequest, BufferKind, DetachViewerRequest, ReadScrollbackRequest, ReplayMode,
+        RehydrateReason, ScrollbackStats, SessionMetadata, SessionSnapshot, SessionStreamFrame,
+        SessionStreamMetadata, ViewerRole,
     };
     use aria_model::{
         CursorPosition, SessionId, SessionStatus, SessionTransportKind, TerminalSize,
     };
+    use aria_terminal::Vt100TerminalEngine;
+    use async_trait::async_trait;
+    use std::collections::HashMap;
+    use tokio::sync::{mpsc, oneshot};
 
-    #[cfg(windows)]
-    #[tokio::test]
-    async fn create_local_waits_for_default_shell_startup_output() {
-        let manager = super::SessionManager::new();
-        let created = manager
-            .create_local(CreateLocalSessionRequest {
-                size: TerminalSize::new(100, 28),
-                cwd: None,
-                command: None,
-            })
-            .await
-            .expect("create local default shell session");
-
-        let snapshot = manager
-            .snapshot(SessionSelector {
-                session_id: created.session_id,
-            })
-            .await
-            .expect("capture default shell snapshot");
-
-        let _ = manager
-            .write(SessionWriteRequest {
-                session_id: created.session_id,
-                data: "exit\r".to_string(),
-            })
-            .await;
-
-        assert!(
-            snapshot_is_renderable(&snapshot),
-            "expected renderable default shell output, got {:#?}",
-            snapshot.visible_lines
-        );
+    struct TestTransport {
+        metadata: TransportMetadata,
     }
 
-    #[cfg(windows)]
-    #[tokio::test]
-    async fn close_removes_exited_session() {
-        let manager = super::SessionManager::new();
-        let created = manager
-            .create_local(CreateLocalSessionRequest {
-                size: TerminalSize::new(80, 24),
-                cwd: None,
-                command: Some(vec![
-                    "cmd.exe".to_string(),
-                    "/C".to_string(),
-                    "echo".to_string(),
-                    "done".to_string(),
-                ]),
-            })
-            .await
-            .expect("create short-lived local session");
-
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
-        loop {
-            let metadata = manager
-                .metadata(SessionSelector {
-                    session_id: created.session_id,
-                })
-                .await
-                .expect("load exited session metadata");
-
-            if metadata.status == SessionStatus::Exited {
-                break;
-            }
-
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "session did not exit before timeout: {:?}",
-                metadata.status
-            );
-            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    #[async_trait]
+    impl Transport for TestTransport {
+        async fn write(&mut self, _data: &[u8]) -> Result<()> {
+            Ok(())
         }
 
-        manager
-            .close(SessionSelector {
-                session_id: created.session_id,
+        async fn resize(&mut self, _size: TerminalSize) -> Result<()> {
+            Ok(())
+        }
+
+        async fn shutdown(&mut self) -> Result<()> {
+            Ok(())
+        }
+
+        fn metadata(&self) -> &TransportMetadata {
+            &self.metadata
+        }
+    }
+
+    fn test_metadata(session_id: SessionId, size: TerminalSize) -> SessionMetadata {
+        SessionMetadata {
+            session_id,
+            title: "powershell".to_string(),
+            status: SessionStatus::Running,
+            transport: SessionTransportKind::LocalPty,
+            size,
+            created_at: "1".to_string(),
+            updated_at: "1".to_string(),
+            cwd: Some("C:/repo".to_string()),
+            command: vec!["powershell.exe".to_string()],
+            shell: "powershell.exe".to_string(),
+            process_id: Some(42),
+            exit_code: None,
+        }
+    }
+
+    fn spawn_test_actor(
+        size: TerminalSize,
+        replay_capacity: usize,
+    ) -> (SessionId, mpsc::Sender<SessionCommand>) {
+        let session_id = SessionId::new();
+        let actor = SessionActor {
+            session_id,
+            transport: Box::new(TestTransport {
+                metadata: TransportMetadata {
+                    kind: SessionTransportKind::LocalPty,
+                    tty_name: None,
+                    process_id: Some(42),
+                },
+            }),
+            terminal: Box::new(Vt100TerminalEngine::new(size, 256)),
+            metadata: test_metadata(session_id, size),
+            scrollback: ScrollbackBuffer::new(256),
+            pending_terminal_query: Vec::new(),
+            viewers: HashMap::new(),
+            event_seq: 0,
+            replay_log: ReplayLog::new(replay_capacity),
+        };
+        let (sender, receiver) = mpsc::channel(64);
+        tokio::spawn(run_session_actor(actor, receiver));
+        (session_id, sender)
+    }
+
+    async fn attach_test_viewer(
+        sender: &mpsc::Sender<SessionCommand>,
+        session_id: SessionId,
+        replay_from_seq: Option<u64>,
+    ) -> (
+        aria_ipc::AttachViewerResponse,
+        mpsc::UnboundedReceiver<SessionStreamFrame>,
+    ) {
+        let (stream_tx, stream_rx) = mpsc::unbounded_channel();
+        let (reply_tx, reply_rx) = oneshot::channel();
+        sender
+            .send(SessionCommand::AttachViewer {
+                request: AttachViewerRequest {
+                    session_id,
+                    role: ViewerRole::Interactive,
+                    viewport: TerminalSize::new(80, 24),
+                    replay_from_seq,
+                    rehydrate_scrollback_lines: Some(200),
+                },
+                stream: stream_tx,
+                reply: reply_tx,
             })
             .await
-            .expect("close exited session");
+            .expect("send attach");
+        (
+            reply_rx.await.expect("attach reply").expect("attach ok"),
+            stream_rx,
+        )
+    }
 
-        let error = manager
-            .snapshot(SessionSelector {
-                session_id: created.session_id,
-            })
+    #[tokio::test]
+    async fn attach_viewer_receives_rehydrate_then_bytes() {
+        let (session_id, sender) = spawn_test_actor(TerminalSize::new(80, 24), 1024);
+        let (response, mut frames) = attach_test_viewer(&sender, session_id, None).await;
+        assert_eq!(response.replay_mode, ReplayMode::Rehydrate);
+
+        match frames.recv().await.expect("rehydrate frame") {
+            SessionStreamFrame::TerminalRehydrate {
+                reason,
+                active_buffer,
+                metadata,
+                ..
+            } => {
+                assert_eq!(reason, RehydrateReason::Attach);
+                assert_eq!(active_buffer, BufferKind::Primary);
+                assert_eq!(metadata, SessionStreamMetadata {
+                    title: "powershell".to_string(),
+                    status: SessionStatus::Running,
+                    cwd: Some("C:/repo".to_string()),
+                    shell: "powershell.exe".to_string(),
+                    process_id: Some(42),
+                    exit_code: None,
+                });
+            }
+            other => panic!("unexpected rehydrate frame: {other:?}"),
+        }
+
+        sender
+            .send(SessionCommand::ProcessOutput(b"hello".to_vec()))
             .await
-            .expect_err("session should be removed after close");
+            .expect("send output");
 
-        assert!(error.to_string().contains("unknown session"));
+        match frames.recv().await.expect("bytes frame") {
+            SessionStreamFrame::TerminalBytes { bytes, .. } => {
+                assert_eq!(
+                    SessionStreamFrame::decode_base64(&bytes).expect("decode bytes"),
+                    b"hello"
+                );
+            }
+            other => panic!("unexpected bytes frame: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn reconnect_within_replay_window_replays_bytes() {
+        let (session_id, sender) = spawn_test_actor(TerminalSize::new(80, 24), 1024);
+        let (first_attach, mut first_frames) = attach_test_viewer(&sender, session_id, None).await;
+        let rehydrate_seq = first_frames.recv().await.expect("rehydrate").seq();
+
+        sender
+            .send(SessionCommand::ProcessOutput(b"hello".to_vec()))
+            .await
+            .expect("send output");
+        let bytes_seq = first_frames.recv().await.expect("bytes").seq();
+
+        let (detach_tx, detach_rx) = oneshot::channel();
+        sender
+            .send(SessionCommand::DetachViewer(
+                DetachViewerRequest {
+                    viewer_id: first_attach.viewer_id,
+                },
+                detach_tx,
+            ))
+            .await
+            .expect("detach");
+        detach_rx.await.expect("detach reply").expect("detach ok");
+
+        let (second_attach, mut replay_frames) =
+            attach_test_viewer(&sender, session_id, Some(rehydrate_seq)).await;
+        assert_eq!(second_attach.replay_mode, ReplayMode::Bytes);
+        assert_eq!(second_attach.next_expected_seq, rehydrate_seq + 1);
+        assert_eq!(replay_frames.recv().await.expect("replayed").seq(), bytes_seq);
+    }
+
+    #[tokio::test]
+    async fn replay_gap_falls_back_to_rehydrate_and_resize_emits_rehydrate() {
+        let (session_id, sender) = spawn_test_actor(TerminalSize::new(80, 24), 8);
+        let (first_attach, mut first_frames) = attach_test_viewer(&sender, session_id, None).await;
+        let initial_seq = first_frames.recv().await.expect("rehydrate").seq();
+
+        sender
+            .send(SessionCommand::ProcessOutput(b"first".to_vec()))
+            .await
+            .expect("first output");
+        let _ = first_frames.recv().await.expect("first bytes");
+        sender
+            .send(SessionCommand::ProcessOutput(b"second-output".to_vec()))
+            .await
+            .expect("second output");
+        let _ = first_frames.recv().await.expect("second bytes");
+
+        let (detach_tx, detach_rx) = oneshot::channel();
+        sender
+            .send(SessionCommand::DetachViewer(
+                DetachViewerRequest {
+                    viewer_id: first_attach.viewer_id,
+                },
+                detach_tx,
+            ))
+            .await
+            .expect("detach");
+        detach_rx.await.expect("detach reply").expect("detach ok");
+
+        let (reattach, mut replay_frames) =
+            attach_test_viewer(&sender, session_id, Some(initial_seq)).await;
+        assert_eq!(reattach.replay_mode, ReplayMode::Rehydrate);
+        match replay_frames.recv().await.expect("rehydrate gap") {
+            SessionStreamFrame::TerminalRehydrate { reason, .. } => {
+                assert_eq!(reason, RehydrateReason::ReplayGap);
+            }
+            other => panic!("unexpected replay-gap frame: {other:?}"),
+        }
+
+        let (resize_tx, resize_rx) = oneshot::channel();
+        sender
+            .send(SessionCommand::Resize(TerminalSize::new(100, 30), resize_tx))
+            .await
+            .expect("resize");
+        resize_rx.await.expect("resize reply").expect("resize ok");
+
+        match replay_frames.recv().await.expect("resize rehydrate") {
+            SessionStreamFrame::TerminalRehydrate { reason, size, .. } => {
+                assert_eq!(reason, RehydrateReason::Resize);
+                assert_eq!(size.cols, 100);
+                assert_eq!(size.rows, 30);
+            }
+            other => panic!("unexpected resize frame: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn read_scrollback_pages_lines() {
+        let (session_id, sender) = spawn_test_actor(TerminalSize::new(80, 24), 1024);
+        sender
+            .send(SessionCommand::ProcessOutput(b"one\ntwo\nthree".to_vec()))
+            .await
+            .expect("send output");
+
+        let (reply_tx, reply_rx) = oneshot::channel();
+        sender
+            .send(SessionCommand::ReadScrollback(
+                ReadScrollbackRequest {
+                    session_id,
+                    before_line_id: None,
+                    limit: 2,
+                },
+                reply_tx,
+            ))
+            .await
+            .expect("read scrollback");
+
+        let page = reply_rx.await.expect("reply").expect("read ok");
+        assert_eq!(page.lines.len(), 2);
+        assert_eq!(page.lines[0].text, "two");
+        assert_eq!(page.lines[1].text, "three");
     }
 
     #[test]
@@ -614,11 +1230,11 @@ mod tests {
     #[test]
     fn cursor_position_reply_uses_one_based_coordinates() {
         assert_eq!(
-            super::cursor_position_reply(CursorPosition { row: 0, col: 0 }),
+            cursor_position_reply(CursorPosition { row: 0, col: 0 }),
             b"\x1b[1;1R"
         );
         assert_eq!(
-            super::cursor_position_reply(CursorPosition { row: 2, col: 4 }),
+            cursor_position_reply(CursorPosition { row: 2, col: 4 }),
             b"\x1b[3;5R"
         );
     }
@@ -655,10 +1271,9 @@ mod tests {
         };
         let prompt_snapshot = SessionSnapshot {
             visible_lines: vec!["C:\\Users\\Ted Zyzsdy>".to_string()],
-            ..blank_snapshot.clone()
+            ..blank_snapshot
         };
 
-        assert!(!snapshot_is_renderable(&blank_snapshot));
         assert!(!snapshot_is_renderable(&raw_escape_snapshot));
         assert!(snapshot_is_renderable(&prompt_snapshot));
     }

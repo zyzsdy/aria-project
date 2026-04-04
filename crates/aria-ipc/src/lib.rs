@@ -1,8 +1,9 @@
 use aria_model::{
     AppInfo, CursorPosition, HealthStatus, SessionId, SessionStatus, SessionTransportKind,
-    TerminalSize,
+    TerminalSize, ViewerId,
 };
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::time::Duration;
 use thiserror::Error;
@@ -136,6 +137,223 @@ pub struct SessionResizeRequest {
 #[serde(rename_all = "camelCase")]
 pub struct EmptyResponse {}
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewerRole {
+    Interactive,
+    Observer,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RehydrateReason {
+    Attach,
+    Resize,
+    ReplayGap,
+    ServerResync,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReplayMode {
+    Bytes,
+    Rehydrate,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BufferKind {
+    Primary,
+    Alternate,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PayloadEncoding {
+    Base64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ViewerDetachedReason {
+    ClientRequest,
+    ConnectionClosed,
+    SessionClosed,
+    ServerShutdown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachViewerRequest {
+    pub session_id: SessionId,
+    pub role: ViewerRole,
+    pub viewport: TerminalSize,
+    pub replay_from_seq: Option<u64>,
+    pub rehydrate_scrollback_lines: Option<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachViewerResponse {
+    pub viewer_id: ViewerId,
+    pub session_id: SessionId,
+    pub accepted_role: ViewerRole,
+    pub replay_mode: ReplayMode,
+    pub next_expected_seq: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetachViewerRequest {
+    pub viewer_id: ViewerId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewerAckRequest {
+    pub viewer_id: ViewerId,
+    pub seq: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadScrollbackRequest {
+    pub session_id: SessionId,
+    pub before_line_id: Option<u64>,
+    pub limit: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScrollbackLine {
+    pub line_id: u64,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadScrollbackResponse {
+    pub session_id: SessionId,
+    pub first_available_line_id: Option<u64>,
+    pub last_available_line_id: Option<u64>,
+    pub has_more_above: bool,
+    pub lines: Vec<ScrollbackLine>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionStreamMetadata {
+    pub title: String,
+    pub status: SessionStatus,
+    pub cwd: Option<String>,
+    pub shell: String,
+    pub process_id: Option<u32>,
+    pub exit_code: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMetadataDelta {
+    pub title: Option<String>,
+    pub status: Option<SessionStatus>,
+    pub cwd: Option<String>,
+    pub shell: Option<String>,
+    pub process_id: Option<u32>,
+    pub exit_code: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum SessionStreamFrame {
+    #[serde(rename = "terminal.rehydrate", rename_all = "camelCase")]
+    TerminalRehydrate {
+        seq: u64,
+        session_id: SessionId,
+        viewer_id: ViewerId,
+        reason: RehydrateReason,
+        active_buffer: BufferKind,
+        size: TerminalSize,
+        payload_encoding: PayloadEncoding,
+        vt_payload: String,
+        metadata: SessionStreamMetadata,
+    },
+    #[serde(rename = "terminal.bytes", rename_all = "camelCase")]
+    TerminalBytes {
+        seq: u64,
+        session_id: SessionId,
+        viewer_id: ViewerId,
+        payload_encoding: PayloadEncoding,
+        bytes: String,
+    },
+    #[serde(rename = "session.metadata", rename_all = "camelCase")]
+    SessionMetadata {
+        seq: u64,
+        session_id: SessionId,
+        viewer_id: ViewerId,
+        metadata: SessionMetadataDelta,
+    },
+    #[serde(rename = "viewer.detached", rename_all = "camelCase")]
+    ViewerDetached {
+        seq: u64,
+        session_id: SessionId,
+        viewer_id: ViewerId,
+        reason: ViewerDetachedReason,
+    },
+}
+
+impl SessionStreamFrame {
+    pub fn seq(&self) -> u64 {
+        match self {
+            Self::TerminalRehydrate { seq, .. }
+            | Self::TerminalBytes { seq, .. }
+            | Self::SessionMetadata { seq, .. }
+            | Self::ViewerDetached { seq, .. } => *seq,
+        }
+    }
+
+    pub fn terminal_rehydrate(
+        seq: u64,
+        session_id: SessionId,
+        viewer_id: ViewerId,
+        reason: RehydrateReason,
+        active_buffer: BufferKind,
+        size: TerminalSize,
+        vt_payload: impl AsRef<[u8]>,
+        metadata: SessionStreamMetadata,
+    ) -> Self {
+        Self::TerminalRehydrate {
+            seq,
+            session_id,
+            viewer_id,
+            reason,
+            active_buffer,
+            size,
+            payload_encoding: PayloadEncoding::Base64,
+            vt_payload: BASE64_STANDARD.encode(vt_payload.as_ref()),
+            metadata,
+        }
+    }
+
+    pub fn terminal_bytes(
+        seq: u64,
+        session_id: SessionId,
+        viewer_id: ViewerId,
+        bytes: impl AsRef<[u8]>,
+    ) -> Self {
+        Self::TerminalBytes {
+            seq,
+            session_id,
+            viewer_id,
+            payload_encoding: PayloadEncoding::Base64,
+            bytes: BASE64_STANDARD.encode(bytes.as_ref()),
+        }
+    }
+
+    pub fn decode_base64(payload: &str) -> Result<Vec<u8>, base64::DecodeError> {
+        BASE64_STANDARD.decode(payload)
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ContractError {
     #[error("service unavailable: {0}")]
@@ -222,8 +440,22 @@ pub trait SessionService: Send + Sync {
         request: SessionResizeRequest,
     ) -> Result<EmptyResponse, ContractError>;
 
-    async fn close_session(&self, request: SessionSelector)
-        -> Result<EmptyResponse, ContractError>;
+    async fn close_session(
+        &self,
+        request: SessionSelector,
+    ) -> Result<EmptyResponse, ContractError>;
+
+    async fn detach_viewer(
+        &self,
+        request: DetachViewerRequest,
+    ) -> Result<EmptyResponse, ContractError>;
+
+    async fn viewer_ack(&self, request: ViewerAckRequest) -> Result<EmptyResponse, ContractError>;
+
+    async fn read_scrollback(
+        &self,
+        request: ReadScrollbackRequest,
+    ) -> Result<ReadScrollbackResponse, ContractError>;
 }
 
 #[derive(Clone, Debug)]
@@ -308,6 +540,27 @@ impl DaemonClient {
         self.call("sessions.close", &request).await
     }
 
+    pub async fn detach_viewer(
+        &self,
+        request: DetachViewerRequest,
+    ) -> Result<EmptyResponse, ClientError> {
+        self.call("sessions.detachViewer", &request).await
+    }
+
+    pub async fn viewer_ack(
+        &self,
+        request: ViewerAckRequest,
+    ) -> Result<EmptyResponse, ClientError> {
+        self.call("sessions.viewerAck", &request).await
+    }
+
+    pub async fn read_scrollback(
+        &self,
+        request: ReadScrollbackRequest,
+    ) -> Result<ReadScrollbackResponse, ClientError> {
+        self.call("sessions.readScrollback", &request).await
+    }
+
     pub async fn call<Req, Resp>(&self, method: &str, payload: &Req) -> Result<Resp, ClientError>
     where
         Req: Serialize + ?Sized,
@@ -360,12 +613,14 @@ impl DaemonClient {
 #[cfg(test)]
 mod tests {
     use super::{
-        DaemonInfo, HealthRequest, HealthResponse, RpcRequest, RpcResponse, ScrollbackStats,
-        SessionMetadata, SessionSnapshot, SessionSummary,
+        AttachViewerRequest, BufferKind, DaemonInfo, HealthRequest, HealthResponse,
+        PayloadEncoding, ReadScrollbackResponse, ReplayMode, RehydrateReason, RpcRequest,
+        RpcResponse, ScrollbackLine, ScrollbackStats, SessionMetadata, SessionMetadataDelta,
+        SessionSnapshot, SessionStreamFrame, SessionStreamMetadata, SessionSummary, ViewerRole,
     };
     use aria_model::{
         AppInfo, CursorPosition, HealthStatus, SessionId, SessionStatus, SessionTransportKind,
-        TerminalSize,
+        TerminalSize, ViewerId,
     };
 
     #[test]
@@ -454,5 +709,161 @@ mod tests {
 
         assert!(request_json.contains("sessions.list"));
         assert!(response_json.contains("\"ok\":true"));
+    }
+
+    #[test]
+    fn stream_frame_round_trips_with_base64_payload() {
+        let session_id = SessionId::new();
+        let viewer_id = ViewerId::new();
+        let frame = SessionStreamFrame::terminal_rehydrate(
+            7,
+            session_id,
+            viewer_id,
+            RehydrateReason::Attach,
+            BufferKind::Primary,
+            TerminalSize::new(80, 24),
+            b"\x1b[?25lhello",
+            SessionStreamMetadata {
+                title: "powershell".to_string(),
+                status: SessionStatus::Running,
+                cwd: Some("C:/repo".to_string()),
+                shell: "powershell.exe".to_string(),
+                process_id: Some(42),
+                exit_code: None,
+            },
+        );
+
+        let json = serde_json::to_string(&frame).expect("serialize frame");
+        let decoded: SessionStreamFrame = serde_json::from_str(&json).expect("deserialize frame");
+
+        match decoded {
+            SessionStreamFrame::TerminalRehydrate {
+                seq,
+                payload_encoding,
+                vt_payload,
+                ..
+            } => {
+                assert_eq!(seq, 7);
+                assert_eq!(payload_encoding, PayloadEncoding::Base64);
+                assert_eq!(
+                    SessionStreamFrame::decode_base64(&vt_payload).expect("decode frame payload"),
+                    b"\x1b[?25lhello"
+                );
+            }
+            other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stream_frame_serializes_with_camel_case_field_names() {
+        let frame = SessionStreamFrame::terminal_rehydrate(
+            1,
+            SessionId::new(),
+            ViewerId::new(),
+            RehydrateReason::Attach,
+            BufferKind::Primary,
+            TerminalSize::new(80, 24),
+            b"hello",
+            SessionStreamMetadata {
+                title: "powershell".to_string(),
+                status: SessionStatus::Running,
+                cwd: Some("C:/repo".to_string()),
+                shell: "powershell.exe".to_string(),
+                process_id: Some(42),
+                exit_code: None,
+            },
+        );
+
+        let json = serde_json::to_value(&frame).expect("serialize frame to value");
+
+        assert_eq!(json.get("sessionId").and_then(|value| value.as_str()).is_some(), true);
+        assert_eq!(json.get("viewerId").and_then(|value| value.as_str()).is_some(), true);
+        assert_eq!(
+            json.get("activeBuffer").and_then(|value| value.as_str()),
+            Some("primary")
+        );
+        assert_eq!(
+            json.get("payloadEncoding").and_then(|value| value.as_str()),
+            Some("base64")
+        );
+        assert_eq!(json.get("vtPayload").and_then(|value| value.as_str()).is_some(), true);
+
+        assert!(json.get("session_id").is_none());
+        assert!(json.get("viewer_id").is_none());
+        assert!(json.get("active_buffer").is_none());
+        assert!(json.get("payload_encoding").is_none());
+        assert!(json.get("vt_payload").is_none());
+    }
+
+    #[test]
+    fn attach_viewer_request_round_trips() {
+        let request = AttachViewerRequest {
+            session_id: SessionId::new(),
+            role: ViewerRole::Interactive,
+            viewport: TerminalSize::new(100, 28),
+            replay_from_seq: Some(15),
+            rehydrate_scrollback_lines: Some(200),
+        };
+
+        let json = serde_json::to_string(&request).expect("serialize attach request");
+        let decoded: AttachViewerRequest =
+            serde_json::from_str(&json).expect("deserialize attach request");
+
+        assert_eq!(decoded.role, ViewerRole::Interactive);
+        assert_eq!(decoded.replay_from_seq, Some(15));
+        assert_eq!(decoded.rehydrate_scrollback_lines, Some(200));
+    }
+
+    #[test]
+    fn read_scrollback_response_round_trips() {
+        let response = ReadScrollbackResponse {
+            session_id: SessionId::new(),
+            first_available_line_id: Some(1),
+            last_available_line_id: Some(4),
+            has_more_above: true,
+            lines: vec![
+                ScrollbackLine {
+                    line_id: 3,
+                    text: "git status".to_string(),
+                },
+                ScrollbackLine {
+                    line_id: 4,
+                    text: "On branch main".to_string(),
+                },
+            ],
+        };
+
+        let json = serde_json::to_string(&response).expect("serialize scrollback response");
+        let decoded: ReadScrollbackResponse =
+            serde_json::from_str(&json).expect("deserialize scrollback response");
+
+        assert!(decoded.has_more_above);
+        assert_eq!(decoded.lines.len(), 2);
+        assert_eq!(decoded.lines[0].line_id, 3);
+    }
+
+    #[test]
+    fn metadata_delta_round_trips() {
+        let delta = SessionMetadataDelta {
+            title: Some("pwsh".to_string()),
+            status: Some(SessionStatus::Exited),
+            cwd: None,
+            shell: Some("pwsh.exe".to_string()),
+            process_id: None,
+            exit_code: Some(0),
+        };
+
+        let json = serde_json::to_string(&delta).expect("serialize metadata delta");
+        let decoded: SessionMetadataDelta =
+            serde_json::from_str(&json).expect("deserialize metadata delta");
+
+        assert_eq!(decoded.status, Some(SessionStatus::Exited));
+        assert_eq!(decoded.exit_code, Some(0));
+    }
+
+    #[test]
+    fn replay_mode_serializes_in_snake_case() {
+        let json = serde_json::to_string(&ReplayMode::Rehydrate).expect("serialize replay mode");
+        assert_eq!(json, "\"rehydrate\"");
     }
 }

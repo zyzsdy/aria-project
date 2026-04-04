@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use aria_core::{init_observability, AppRole, BootstrapContext};
 use aria_ipc::{
-    ContractError, CreateLocalSessionRequest, DaemonClient, DaemonInfo, EmptyResponse,
-    HealthRequest, HealthResponse, ListSessionsRequest, RpcRequest, RpcResponse,
-    SessionResizeRequest, SessionSelector, SessionWriteRequest, DEFAULT_DAEMON_ADDR,
+    AttachViewerRequest, ContractError, CreateLocalSessionRequest, DaemonClient, DaemonInfo,
+    DetachViewerRequest, EmptyResponse, HealthRequest, HealthResponse, ListSessionsRequest,
+    ReadScrollbackRequest, RpcRequest, RpcResponse, SessionResizeRequest, SessionSelector,
+    SessionWriteRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, HealthStatus};
 use aria_session::SessionManager;
@@ -165,18 +166,14 @@ async fn handle_client(stream: TcpStream, state: Arc<DaemonState>) -> Result<()>
     }
 
     let request: RpcRequest = serde_json::from_str(&line).context("deserialize RPC request")?;
-    let response = dispatch_request(request, state).await;
-    let encoded = serde_json::to_vec(&response).context("serialize RPC response")?;
-
     let mut stream = reader.into_inner();
-    stream
-        .write_all(&encoded)
-        .await
-        .context("write RPC response")?;
-    stream.write_all(b"\n").await.context("write RPC newline")?;
-    stream.flush().await.context("flush RPC response")?;
 
-    Ok(())
+    if request.method == "sessions.attachViewer" {
+        return handle_attach_viewer_stream(stream, request.payload, state).await;
+    }
+
+    let response = dispatch_request(request, state).await;
+    write_json_line(&mut stream, &response, "RPC response").await
 }
 
 async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcResponse {
@@ -188,7 +185,7 @@ async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcRe
                 app: state.app_info.clone(),
                 daemon: Some(DaemonInfo {
                     pid: std::process::id(),
-                    api_version: "phase1".to_string(),
+                    api_version: "phase2".to_string(),
                     started_at: Some(state.started_at.clone()),
                     role: "daemon".to_string(),
                     status: HealthStatus::Ready,
@@ -242,10 +239,69 @@ async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcRe
             },
             Err(error) => err(error),
         },
+        "sessions.detachViewer" => match decode::<DetachViewerRequest>(request.payload) {
+            Ok(payload) => match state.manager.detach_viewer(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(error),
+            },
+            Err(error) => err(error),
+        },
+        "sessions.viewerAck" => match decode::<ViewerAckRequest>(request.payload) {
+            Ok(payload) => match state.manager.viewer_ack(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(error),
+            },
+            Err(error) => err(error),
+        },
+        "sessions.readScrollback" => match decode::<ReadScrollbackRequest>(request.payload) {
+            Ok(payload) => match state.manager.read_scrollback(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(error),
+            },
+            Err(error) => err(error),
+        },
         method => err(ContractError::Unavailable(format!(
             "unknown method {method}"
         ))),
     }
+}
+
+async fn handle_attach_viewer_stream(
+    mut stream: TcpStream,
+    payload: serde_json::Value,
+    state: Arc<DaemonState>,
+) -> Result<()> {
+    let request: AttachViewerRequest = decode(payload)?;
+    let (response, mut frames) = state
+        .manager
+        .attach_viewer(request)
+        .await
+        .context("attach viewer")?;
+
+    let viewer_id = response.viewer_id;
+    if let Err(error) = write_json_line(&mut stream, &ok(response), "attach response").await {
+        let _ = state
+            .manager
+            .detach_viewer(DetachViewerRequest { viewer_id })
+            .await;
+        return Err(error);
+    }
+
+    while let Some(frame) = frames.recv().await {
+        if let Err(error) = write_json_line(&mut stream, &frame, "stream frame").await {
+            let _ = state
+                .manager
+                .detach_viewer(DetachViewerRequest { viewer_id })
+                .await;
+            return Err(error);
+        }
+    }
+
+    let _ = state
+        .manager
+        .detach_viewer(DetachViewerRequest { viewer_id })
+        .await;
+    Ok(())
 }
 
 fn ok<T>(payload: T) -> RpcResponse
@@ -272,6 +328,26 @@ where
     T: for<'de> Deserialize<'de>,
 {
     serde_json::from_value(payload).context("decode RPC payload")
+}
+
+async fn write_json_line<T>(stream: &mut TcpStream, value: &T, label: &str) -> Result<()>
+where
+    T: Serialize,
+{
+    let encoded = serde_json::to_vec(value).with_context(|| format!("serialize {label}"))?;
+    stream
+        .write_all(&encoded)
+        .await
+        .with_context(|| format!("write {label}"))?;
+    stream
+        .write_all(b"\n")
+        .await
+        .with_context(|| format!("write {label} newline"))?;
+    stream
+        .flush()
+        .await
+        .with_context(|| format!("flush {label}"))?;
+    Ok(())
 }
 
 async fn acquire_lock(path: &Path, addr: &str) -> Result<LockAcquire> {

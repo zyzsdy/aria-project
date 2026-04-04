@@ -53,6 +53,7 @@ macro_rules! define_id {
 }
 
 define_id!(SessionId);
+define_id!(ViewerId);
 define_id!(WindowId);
 define_id!(ConnectionProfileId);
 
