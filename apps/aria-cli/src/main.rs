@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
-use aria_core::{init_observability, AppRole, BootstrapContext};
+use aria_core::{init_observability, AppRole, BootstrapContext, ObservabilityHandle};
 use aria_ipc::{
     CreateLocalSessionRequest, DaemonClient, HealthRequest, ListSessionsRequest,
     SessionResizeRequest, SessionSelector, SessionSummary, SessionWriteRequest,
@@ -7,6 +7,7 @@ use aria_ipc::{
 };
 use aria_model::{AppInfo, SessionId, TerminalSize};
 use clap::{Args, Parser, Subcommand};
+use std::fmt::Write as _;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about = "Aria CLI")]
@@ -27,6 +28,17 @@ enum Command {
         #[command(subcommand)]
         command: SessionCommand,
     },
+    /// Local utility and showcase commands.
+    Tools {
+        #[command(subcommand)]
+        command: ToolCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ToolCommand {
+    /// Show a terminal capability showcase.
+    Terminal,
 }
 
 #[derive(Debug, Subcommand)]
@@ -90,38 +102,72 @@ struct ResizeArgs {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let app_info = AppInfo::new(
+    let cli = Cli::parse();
+    let app_info = build_app_info();
+
+    run(cli.command, app_info).await
+}
+
+fn build_app_info() -> AppInfo {
+    AppInfo::new(
         "Aria CLI",
         env!("CARGO_PKG_VERSION"),
         option_env!("ARIA_BUILD_TIME").map(|value| value.to_owned()),
         std::env::consts::OS,
-    );
+    )
+}
 
-    let context = BootstrapContext::load(AppRole::Cli, app_info)?;
-    let _observability = init_observability(
-        context.role,
-        &context.paths,
-        context.config.log_level.as_str(),
-    )?;
+struct BootstrapServices {
+    context: BootstrapContext,
+    client: DaemonClient,
+    _observability: ObservabilityHandle,
+}
 
-    let client = DaemonClient::new(
-        std::env::var("ARIA_DAEMON_ADDR").unwrap_or_else(|_| DEFAULT_DAEMON_ADDR.to_string()),
-    );
+impl BootstrapServices {
+    fn load(app_info: AppInfo) -> Result<Self> {
+        let context = BootstrapContext::load(AppRole::Cli, app_info)?;
+        let observability = init_observability(
+            context.role,
+            &context.paths,
+            context.config.log_level.as_str(),
+        )?;
+        let client = DaemonClient::new(
+            std::env::var("ARIA_DAEMON_ADDR").unwrap_or_else(|_| DEFAULT_DAEMON_ADDR.to_string()),
+        );
 
-    match Cli::parse().command {
-        Command::Version => print_version(&context),
-        Command::Doctor => print_doctor(&context, &client).await?,
-        Command::Daemon { command } => handle_daemon_command(command, &client).await?,
-        Command::Sessions { command } => handle_session_command(command, &client).await?,
+        Ok(Self {
+            context,
+            client,
+            _observability: observability,
+        })
+    }
+}
+
+async fn run(command: Command, app_info: AppInfo) -> Result<()> {
+    match command {
+        Command::Version => print_version(&app_info),
+        Command::Doctor => {
+            let services = BootstrapServices::load(app_info)?;
+            print_doctor(&services.context, &services.client).await?;
+        }
+        Command::Daemon { command } => {
+            let services = BootstrapServices::load(app_info)?;
+            handle_daemon_command(command, &services.client).await?;
+        }
+        Command::Sessions { command } => {
+            let services = BootstrapServices::load(app_info)?;
+            handle_session_command(command, &services.client).await?;
+        }
+        Command::Tools { command } => handle_tool_command(command),
     }
 
     Ok(())
 }
 
-fn print_version(context: &BootstrapContext) {
+fn print_version(app_info: &AppInfo) {
     println!(
         "{} {} ({})",
-        context.app_info.name, context.app_info.version, context.app_info.platform
+        app_info.name, app_info.version, app_info.platform
     );
 }
 
@@ -274,6 +320,186 @@ async fn handle_session_command(command: SessionCommand, client: &DaemonClient) 
     Ok(())
 }
 
+fn handle_tool_command(command: ToolCommand) {
+    match command {
+        ToolCommand::Terminal => {
+            print!("{}", render_terminal_showcase());
+        }
+    }
+}
+
+fn render_terminal_showcase() -> String {
+    const RESET: &str = "\x1b[0m";
+
+    let mut output = String::new();
+    let _ = writeln!(output, "\x1b[1mAria Terminal Capability Showcase{RESET}");
+    let _ = writeln!(
+        output,
+        "A deterministic one-shot demo for colors, styles, Unicode, and hyperlink support."
+    );
+    let _ = writeln!(
+        output,
+        "No daemon connection, terminal probing, alternate screen, or animations required."
+    );
+
+    push_section_heading(&mut output, "16-Color Reference");
+    push_ansi_palette_row(
+        &mut output,
+        "Standard FG",
+        0,
+        &[
+            "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+        ],
+    );
+    push_ansi_palette_row(
+        &mut output,
+        "Bright FG",
+        8,
+        &[
+            "bright black",
+            "bright red",
+            "bright green",
+            "bright yellow",
+            "bright blue",
+            "bright magenta",
+            "bright cyan",
+            "bright white",
+        ],
+    );
+    push_background_palette_row(&mut output, "Standard BG", 0, 8);
+    push_background_palette_row(&mut output, "Bright BG", 8, 8);
+
+    push_section_heading(&mut output, "256-Color Cube");
+    let _ = writeln!(
+        output,
+        "6x6x6 palette cube rendered as indexed background swatches."
+    );
+    let _ = writeln!(
+        output,
+        "Indexed accents: \x1b[38;5;196mred\x1b[0m \x1b[38;5;82mgreen\x1b[0m \x1b[38;5;33mblue\x1b[0m"
+    );
+    for red in 0..6 {
+        for green in 0..6 {
+            for blue in 0..6 {
+                let index = 16 + red * 36 + green * 6 + blue;
+                let _ = write!(output, "\x1b[48;5;{index}m {index:>3} \x1b[0m");
+            }
+            output.push(' ');
+        }
+        output.push('\n');
+    }
+
+    let _ = writeln!(output);
+    let _ = writeln!(output, "Grayscale Ramp");
+    for index in 232..=255 {
+        let _ = write!(output, "\x1b[48;5;{index}m {index:>3} \x1b[0m");
+    }
+    output.push('\n');
+
+    push_section_heading(&mut output, "Truecolor Gradients");
+    let _ = writeln!(
+        output,
+        "Foreground anchor: \x1b[38;2;255;0;128mhot pink\x1b[0m"
+    );
+    let _ = writeln!(
+        output,
+        "Background anchor: \x1b[48;2;0;128;255m  azure chip  \x1b[0m"
+    );
+    let _ = write!(output, "Foreground sweep: ");
+    for step in 0..32 {
+        let red = 255_u16.saturating_sub(step * 7) as u8;
+        let green = ((step * 255) / 31) as u8;
+        let blue = (96 + (step * 159) / 31) as u8;
+        let _ = write!(output, "\x1b[38;2;{red};{green};{blue}m▇\x1b[0m");
+    }
+    output.push('\n');
+    let _ = write!(output, "Background sweep: ");
+    for step in 0..32 {
+        let red = ((step * 255) / 31) as u8;
+        let green = (255_u16.saturating_sub(step * 5) as u8).max(32);
+        let blue = 255_u16.saturating_sub((step * 255) / 31) as u8;
+        let _ = write!(output, "\x1b[48;2;{red};{green};{blue}m \x1b[0m");
+    }
+    output.push('\n');
+
+    push_section_heading(&mut output, "Style Samples");
+    let _ = writeln!(
+        output,
+        "Intensity: \x1b[1mBold\x1b[0m \x1b[2mFaint\x1b[0m \x1b[7mInverse\x1b[0m"
+    );
+    let _ = writeln!(
+        output,
+        "Text styles: \x1b[3mItalic\x1b[0m \x1b[9mStrikethrough\x1b[0m \x1b[53mOverline\x1b[0m"
+    );
+    let _ = writeln!(
+        output,
+        "Underline variants: \x1b[4:1mSingle\x1b[0m \x1b[4:2mDouble\x1b[0m \x1b[4:3mCurly\x1b[0m \x1b[4:4mDotted\x1b[0m \x1b[4:5mDashed\x1b[0m"
+    );
+    let _ = writeln!(
+        output,
+        "Reset behavior: \x1b[1;3;38;5;214mstyled\x1b[0m back to normal text"
+    );
+
+    push_section_heading(&mut output, "Unicode And Emoji");
+    let _ = writeln!(output, "Emoji: 😀 🚀 🧠");
+    let _ = writeln!(output, "ZWJ: 👩‍🚀 👨‍👩‍👧‍👦 🧑‍💻");
+    let _ = writeln!(output, "Skin tones: 👍 👍🏽 👍🏿");
+    let _ = writeln!(output, "Flags: 🇭🇰 🇯🇵 🇺🇸");
+    let _ = writeln!(output, "Combining: e\u{0301} n\u{0303} o\u{0302}");
+    let _ = writeln!(output, "Wide: 你好 こんにちは 안녕");
+    let _ = writeln!(output, "Cell ruler: |A|好|界|🙂|🚀|");
+
+    push_section_heading(&mut output, "Advanced Glyphs");
+    let _ = writeln!(output, "Box drawing:");
+    let _ = writeln!(output, "┌──────────┬──────────┐");
+    let _ = writeln!(output, "│ scrollback │ viewport │");
+    let _ = writeln!(output, "└──────────┴──────────┘");
+    let _ = writeln!(output, "Blocks: ▁▂▃▄▅▆▇█");
+    let _ = writeln!(output, "Braille: ⠁⠃⠇⠧⠷⠿");
+    let _ = writeln!(output, "Powerline: \u{e0b0} \u{e0b1} \u{e0b2} \u{e0b3}");
+    let _ = writeln!(
+        output,
+        "OSC 8 Hyperlink: {}",
+        osc8_link(
+            "https://example.com/aria-terminal-demo",
+            "Aria terminal demo link"
+        )
+    );
+
+    output.push_str(RESET);
+    output.push('\n');
+    output
+}
+
+fn push_section_heading(output: &mut String, title: &str) {
+    if !output.is_empty() {
+        output.push('\n');
+    }
+    let _ = writeln!(output, "\x1b[1;4m{title}\x1b[0m");
+}
+
+fn push_ansi_palette_row(output: &mut String, label: &str, start: u8, names: &[&str]) {
+    let _ = write!(output, "{label}: ");
+    for (offset, name) in names.iter().enumerate() {
+        let index = start + offset as u8;
+        let _ = write!(output, "\x1b[38;5;{index}m{name:^13}\x1b[0m");
+    }
+    output.push('\n');
+}
+
+fn push_background_palette_row(output: &mut String, label: &str, start: u8, count: u8) {
+    let _ = write!(output, "{label}: ");
+    for offset in 0..count {
+        let index = start + offset;
+        let _ = write!(output, "\x1b[48;5;{index}m {index:>2} \x1b[0m");
+    }
+    output.push('\n');
+}
+
+fn osc8_link(url: &str, label: &str) -> String {
+    format!("\x1b]8;;{url}\x1b\\{label}\x1b]8;;\x1b\\")
+}
+
 async fn resolve_session_id(client: &DaemonClient, input: &str) -> Result<SessionId> {
     let response = client
         .list_sessions(ListSessionsRequest)
@@ -336,9 +562,13 @@ fn format_session_matches(matches: &[&SessionSummary]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{match_session_id, normalize_uuid_fragment};
+    use super::{
+        match_session_id, normalize_uuid_fragment, render_terminal_showcase, Cli, Command,
+        ToolCommand,
+    };
     use aria_ipc::SessionSummary;
     use aria_model::{SessionStatus, SessionTransportKind, TerminalSize};
+    use clap::Parser;
 
     fn session_summary(id: &str, title: &str) -> SessionSummary {
         SessionSummary {
@@ -405,5 +635,50 @@ mod tests {
         let error = match_session_id("1234", &[session]).expect_err("reject unknown session id");
 
         assert!(error.to_string().contains("unknown session"));
+    }
+
+    #[test]
+    fn cli_parses_tools_terminal_subcommand() {
+        let cli = Cli::try_parse_from(["aria-cli", "tools", "terminal"])
+            .expect("parse tools terminal command");
+
+        assert!(matches!(
+            cli.command,
+            Command::Tools {
+                command: ToolCommand::Terminal
+            }
+        ));
+    }
+
+    #[test]
+    fn terminal_showcase_includes_expected_sections_and_sequences() {
+        let output = render_terminal_showcase();
+
+        for header in [
+            "Aria Terminal Capability Showcase",
+            "16-Color Reference",
+            "256-Color Cube",
+            "Truecolor Gradients",
+            "Style Samples",
+            "Unicode And Emoji",
+            "Advanced Glyphs",
+        ] {
+            assert!(output.contains(header), "missing header: {header}");
+        }
+
+        for sample in [
+            "\u{1b}[38;5;196m",
+            "\u{1b}[48;5;33m",
+            "\u{1b}[38;2;255;0;128m",
+            "\u{1b}[48;2;0;128;255m",
+            "\u{1b}]8;;https://example.com/aria-terminal-demo",
+            "Emoji: 😀 🚀 🧠",
+            "Combining: e\u{0301} n\u{0303} o\u{0302}",
+            "Wide: 你好 こんにちは 안녕",
+        ] {
+            assert!(output.contains(sample), "missing sample: {sample:?}");
+        }
+
+        assert!(output.ends_with("\u{1b}[0m\n"));
     }
 }
