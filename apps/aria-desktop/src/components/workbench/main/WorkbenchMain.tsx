@@ -1,10 +1,14 @@
-import type { AppSettings, SettingsGroup } from "@aria/types";
-import type { SessionSummary } from "@aria/types";
-import type { RefCallback } from "react";
+import type {
+  AppSettings,
+  SessionMetadataDelta,
+  SessionStreamMetadata,
+  SessionSummary,
+  SettingsGroup
+} from "@aria/types";
 import { HtmlTabHost } from "./HtmlTabHost";
 import { SessionTabs } from "./SessionTabs";
-import { TerminalPane } from "./TerminalPane";
-import type { WorkbenchTab } from "./tabState";
+import { TerminalWorkspace } from "./TerminalWorkspace";
+import type { TerminalTab, WorkbenchTab } from "./tabState";
 
 type WorkbenchMainProps = {
   tabs: WorkbenchTab[];
@@ -12,8 +16,10 @@ type WorkbenchMainProps = {
   sessions: SessionSummary[];
   settings: AppSettings;
   selectedSettingsGroup: SettingsGroup;
-  streamState: "detached" | "attaching" | "attached" | "reconnecting";
-  terminalHostRef: RefCallback<HTMLDivElement>;
+  onStreamDetached: (sessionId: string) => void;
+  onStreamError: (error: unknown) => void;
+  onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
+  onStreamMetadataDelta: (sessionId: string, delta: SessionMetadataDelta) => void;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onSelectSettingsGroup: (group: SettingsGroup) => void;
@@ -27,14 +33,20 @@ export function WorkbenchMain({
   sessions,
   settings,
   selectedSettingsGroup,
-  streamState,
-  terminalHostRef,
+  onStreamDetached,
+  onStreamError,
+  onStreamMetadata,
+  onStreamMetadataDelta,
   onSelectTab,
   onCloseTab,
   onSelectSettingsGroup,
   onUpdateSettings,
   onResetSettingsGroup
 }: WorkbenchMainProps) {
+  const terminalTabs = tabs.filter((tab): tab is TerminalTab => tab.type === "terminal");
+  const htmlTab = activeTab?.type === "html" ? activeTab : null;
+  const showTerminalWorkspace = terminalTabs.length > 0 || !htmlTab;
+
   return (
     <section className="main-shell">
       <SessionTabs
@@ -51,22 +63,33 @@ export function WorkbenchMain({
         }))}
       />
 
-      {activeTab?.type === "html" ? (
-        <HtmlTabHost
-          onResetSettingsGroup={onResetSettingsGroup}
-          onSelectSettingsGroup={onSelectSettingsGroup}
-          onUpdateSettings={onUpdateSettings}
-          pageId={activeTab.pageId}
-          selectedSettingsGroup={selectedSettingsGroup}
-          settings={settings}
-        />
-      ) : (
-        <TerminalPane
-          selectedSessionId={activeTab?.type === "terminal" ? activeTab.sessionId : null}
-          streamState={streamState}
-          terminalHostRef={terminalHostRef}
-        />
-      )}
+      <section className="main-content-shell">
+        {showTerminalWorkspace ? (
+          <TerminalWorkspace
+            activeTabId={activeTab?.type === "terminal" ? activeTab.id : null}
+            onStreamDetached={onStreamDetached}
+            onStreamError={onStreamError}
+            onStreamMetadata={onStreamMetadata}
+            onStreamMetadataDelta={onStreamMetadataDelta}
+            settings={settings}
+            tabs={terminalTabs}
+            visibility={htmlTab ? "hidden" : "visible"}
+          />
+        ) : null}
+
+        {htmlTab ? (
+          <div className="html-tab-layer">
+            <HtmlTabHost
+              onResetSettingsGroup={onResetSettingsGroup}
+              onSelectSettingsGroup={onSelectSettingsGroup}
+              onUpdateSettings={onUpdateSettings}
+              pageId={htmlTab.pageId}
+              selectedSettingsGroup={selectedSettingsGroup}
+              settings={settings}
+            />
+          </div>
+        ) : null}
+      </section>
     </section>
   );
 }

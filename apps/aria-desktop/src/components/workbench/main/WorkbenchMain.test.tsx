@@ -1,5 +1,29 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("./TerminalWorkspace", () => ({
+  TerminalWorkspace: ({
+    activeTabId,
+    tabs,
+    visibility
+  }: {
+    activeTabId: string | null;
+    tabs: Array<{ id: string; sessionId: string }>;
+    visibility: "visible" | "hidden";
+  }) => (
+    <section className="terminal-workspace" data-terminal-workspace-visibility={visibility}>
+      {tabs.map((tab) => (
+        <div
+          key={tab.id}
+          className="terminal-surface"
+          data-session-id={tab.sessionId}
+          data-terminal-active={String(tab.id === activeTabId && visibility === "visible")}
+        />
+      ))}
+    </section>
+  )
+}));
+
 import { WorkbenchMain } from "./WorkbenchMain";
 import { createHtmlTab, createTerminalTab } from "./tabState";
 
@@ -9,6 +33,10 @@ describe("WorkbenchMain", () => {
       <WorkbenchMain
         activeTab={createTerminalTab("session-a")}
         onCloseTab={() => undefined}
+        onStreamDetached={() => undefined}
+        onStreamError={() => undefined}
+        onStreamMetadata={() => undefined}
+        onStreamMetadataDelta={() => undefined}
         onResetSettingsGroup={() => undefined}
         onSelectSettingsGroup={() => undefined}
         onSelectTab={() => undefined}
@@ -46,27 +74,41 @@ describe("WorkbenchMain", () => {
             closeConfirmation: "confirm_running_sessions"
           }
         }}
-        streamState="attached"
-        tabs={[createTerminalTab("session-a")]}
-        terminalHostRef={() => undefined}
+        tabs={[createTerminalTab("session-a"), createTerminalTab("session-b")]}
       />
     );
 
-    expect(markup).toContain("terminal-region");
+    expect(markup).toContain("terminal-workspace");
+    expect(markup.match(/terminal-surface/g)).toHaveLength(2);
+    expect(markup).toContain('data-terminal-active="true"');
     expect(markup).not.toContain("settings-page");
   });
 
-  it("renders the html host for settings tabs", () => {
+  it("keeps the terminal workspace mounted behind html tabs", () => {
     const markup = renderToStaticMarkup(
       <WorkbenchMain
         activeTab={createHtmlTab("settings", "Settings")}
         onCloseTab={() => undefined}
+        onStreamDetached={() => undefined}
+        onStreamError={() => undefined}
+        onStreamMetadata={() => undefined}
+        onStreamMetadataDelta={() => undefined}
         onResetSettingsGroup={() => undefined}
         onSelectSettingsGroup={() => undefined}
         onSelectTab={() => undefined}
         onUpdateSettings={() => undefined}
         selectedSettingsGroup="appearance"
-        sessions={[]}
+        sessions={[
+          {
+            sessionId: "session-a",
+            title: "PowerShell",
+            status: "running",
+            transport: "local_pty",
+            size: { cols: 80, rows: 24, pixelWidth: 0, pixelHeight: 0 },
+            createdAt: "1",
+            updatedAt: "1"
+          }
+        ]}
         settings={{
           appearance: {
             themePreset: "north",
@@ -88,14 +130,14 @@ describe("WorkbenchMain", () => {
             closeConfirmation: "confirm_running_sessions"
           }
         }}
-        streamState="attached"
-        tabs={[createHtmlTab("settings", "Settings")]}
-        terminalHostRef={() => undefined}
+        tabs={[createTerminalTab("session-a"), createHtmlTab("settings", "Settings")]}
       />
     );
 
+    expect(markup).toContain("terminal-workspace");
+    expect(markup).toContain('data-terminal-workspace-visibility="hidden"');
     expect(markup).toContain("html-tab-region");
     expect(markup).toContain("settings-page");
-    expect(markup).not.toContain("terminal-empty-state");
+    expect(markup).toContain("terminal-surface");
   });
 });

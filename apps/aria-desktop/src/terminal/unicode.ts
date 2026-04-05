@@ -13,7 +13,7 @@ export function activateUnicode11(
   addon: { dispose(): void } = new Unicode11Addon()
 ) {
   terminal.loadAddon(addon);
-
+  
   if (terminal.unicode.versions.includes("11")) {
     terminal.unicode.activeVersion = "11";
   }

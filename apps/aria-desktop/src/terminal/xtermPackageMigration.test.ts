@@ -12,12 +12,23 @@ describe("desktop xterm package usage", () => {
     expect(packageJson.dependencies?.["@xterm/xterm"]).toBeDefined();
     expect(packageJson.dependencies?.xterm).toBeUndefined();
 
-    expect(readFileSync(new URL("../App.tsx", import.meta.url), "utf8")).toContain(
+    expect(
+      readFileSync(
+        new URL("../components/workbench/main/TerminalTabSurface.tsx", import.meta.url),
+        "utf8"
+      )
+    ).toContain('from "@xterm/xterm";');
+    expect(
+      readFileSync(
+        new URL("../components/workbench/main/TerminalTabSurface.tsx", import.meta.url),
+        "utf8"
+      )
+    ).not.toContain('from "xterm";');
+
+    expect(readFileSync(new URL("../App.tsx", import.meta.url), "utf8")).not.toContain(
       'from "@xterm/xterm";'
     );
-    expect(readFileSync(new URL("../App.tsx", import.meta.url), "utf8")).not.toContain(
-      'from "xterm";'
-    );
+    expect(readFileSync(new URL("../App.tsx", import.meta.url), "utf8")).not.toContain('from "xterm";');
 
     expect(readFileSync(new URL("../main.tsx", import.meta.url), "utf8")).toContain(
       '"@xterm/xterm/css/xterm.css"'

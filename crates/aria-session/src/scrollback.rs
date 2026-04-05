@@ -79,6 +79,12 @@ impl ScrollbackBuffer {
         }
     }
 
+    pub fn recent_completed_lines(&self, limit: usize) -> Vec<ScrollbackLineEntry> {
+        let len = self.lines.len();
+        let start = len.saturating_sub(limit);
+        self.lines.iter().skip(start).cloned().collect()
+    }
+
     fn completed_line_count(&self) -> usize {
         self.next_line_id.saturating_sub(1) as usize
     }
@@ -153,6 +159,28 @@ mod tests {
                 ScrollbackLineEntry {
                     line_id: 3,
                     text: "three".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn recent_completed_lines_omits_partial_tail() {
+        let mut buffer = ScrollbackBuffer::new(5);
+        buffer.ingest(b"one\ntwo\nthree");
+
+        let lines = buffer.recent_completed_lines(3);
+
+        assert_eq!(
+            lines,
+            vec![
+                ScrollbackLineEntry {
+                    line_id: 1,
+                    text: "one".to_string(),
+                },
+                ScrollbackLineEntry {
+                    line_id: 2,
+                    text: "two".to_string(),
                 },
             ]
         );
