@@ -1,20 +1,11 @@
-import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
+import type { ITerminalAddon, Terminal } from "@xterm/xterm";
 
-type UnicodeTerminal = {
-  loadAddon(addon: { dispose(): void }): void;
-  unicode: {
-    activeVersion: string;
-    versions: readonly string[];
-  };
-};
+type UnicodeTerminal = Pick<Terminal, "loadAddon">;
 
-export function activateUnicode11(
+export function activateUnicodeGraphemes(
   terminal: UnicodeTerminal,
-  addon: { dispose(): void } = new Unicode11Addon()
+  addon: ITerminalAddon = new UnicodeGraphemesAddon()
 ) {
   terminal.loadAddon(addon);
-  
-  if (terminal.unicode.versions.includes("11")) {
-    terminal.unicode.activeVersion = "11";
-  }
 }

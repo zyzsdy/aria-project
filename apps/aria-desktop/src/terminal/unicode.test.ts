@@ -1,21 +1,48 @@
 import { describe, expect, it, vi } from "vitest";
-import { activateUnicode11 } from "./unicode";
+import * as unicodeModule from "./unicode";
 
-describe("activateUnicode11", () => {
-  it("loads the Unicode11 addon and switches the terminal to Unicode 11", () => {
-    const addon = { dispose: vi.fn() };
-    const loadAddon = vi.fn();
-    const terminal = {
-      loadAddon,
+type UnicodeAddon = {
+  activate?: (terminal: UnicodeTerminal) => void;
+  dispose(): void;
+};
+
+type UnicodeTerminal = {
+  loadAddon(addon: UnicodeAddon): void;
+  unicode: {
+    activeVersion: string;
+    versions: readonly string[];
+  };
+};
+
+describe("activateUnicodeGraphemes", () => {
+  it("loads the grapheme addon and switches the terminal to grapheme-aware Unicode", () => {
+    const addon: UnicodeAddon = {
+      activate: vi.fn((terminal: UnicodeTerminal) => {
+        if (terminal.unicode.versions.includes("15-graphemes")) {
+          terminal.unicode.activeVersion = "15-graphemes";
+        }
+      }),
+      dispose: vi.fn()
+    };
+
+    const terminal: UnicodeTerminal = {
+      loadAddon(addonToLoad) {
+        addonToLoad.activate?.(terminal);
+      },
       unicode: {
         activeVersion: "6",
-        versions: ["6", "11"]
+        versions: ["6", "15-graphemes"]
       }
     };
 
-    activateUnicode11(terminal, addon);
+    const activateUnicodeGraphemes = (
+      unicodeModule as Record<string, unknown>
+    ).activateUnicodeGraphemes as ((terminal: UnicodeTerminal, addon: UnicodeAddon) => void) | undefined;
 
-    expect(loadAddon).toHaveBeenCalledWith(addon);
-    expect(terminal.unicode.activeVersion).toBe("11");
+    expect(typeof activateUnicodeGraphemes).toBe("function");
+    activateUnicodeGraphemes?.(terminal, addon);
+
+    expect(addon.activate).toHaveBeenCalledWith(terminal);
+    expect(terminal.unicode.activeVersion).toBe("15-graphemes");
   });
 });

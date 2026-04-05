@@ -6,13 +6,13 @@ import type {
   SessionStreamFrame,
   SessionStreamMetadata
 } from "@aria/types";
-import { CanvasAddon } from "@xterm/addon-canvas";
 import { FitAddon } from "@xterm/addon-fit";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { applySettingsToTerminal } from "../../../settings/appSettings";
 import { createTerminalOptions } from "../../../terminal/options";
-import { activateUnicode11 } from "../../../terminal/unicode";
+import { activateUnicodeGraphemes } from "../../../terminal/unicode";
+import { createDefaultWebglAddon } from "../../../terminal/webgl";
 import {
   createTerminalStreamController,
   type StreamState
@@ -77,11 +77,11 @@ export function TerminalTabSurface({
     applySettingsToTerminal(terminal, settingsRef.current);
 
     const fitAddon = new FitAddon();
-    const canvasAddon = new CanvasAddon();
+    const webglAddon = createDefaultWebglAddon();
     terminal.loadAddon(fitAddon);
-    terminal.loadAddon(canvasAddon);
-    activateUnicode11(terminal);
+    activateUnicodeGraphemes(terminal);
     terminal.open(host);
+    terminal.loadAddon(webglAddon);
     fitAddon.fit();
 
     const disposeData = terminal.onData((data: string) => {
