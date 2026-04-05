@@ -1,4 +1,4 @@
-import { FolderKanban, PanelsTopLeft, Settings2, type LucideIcon } from "lucide-react";
+import { Ellipsis, FolderKanban, PanelsTopLeft, type LucideIcon } from "lucide-react";
 import {
   toggleSidebar,
   type RailAction,
@@ -17,18 +17,24 @@ const PRIMARY_ITEMS: RailItem[] = [
   { action: "collections", icon: FolderKanban, label: "Collections", size: 26 }
 ];
 
-const SECONDARY_ITEMS: RailItem[] = [
-  { action: "settings", icon: Settings2, label: "Settings", size: 22 }
-];
-
 type ActivityRailProps = {
   openSidebar: SidebarPanel | null;
+  isToolMenuOpen: boolean;
   onOpenSidebarChange: (next: SidebarPanel | null) => void;
+  onToolMenuOpenChange: (next: boolean) => void;
+  onSettings: () => void;
+  onCheckForUpdates: () => void;
+  onAbout: () => void;
 };
 
 export function ActivityRail({
   openSidebar,
-  onOpenSidebarChange
+  isToolMenuOpen,
+  onOpenSidebarChange,
+  onToolMenuOpenChange,
+  onSettings,
+  onCheckForUpdates,
+  onAbout
 }: ActivityRailProps) {
   return (
     <aside className="activity-rail" aria-label="Workbench sections">
@@ -44,14 +50,32 @@ export function ActivityRail({
       </div>
 
       <div className="rail-group rail-group-bottom">
-        {SECONDARY_ITEMS.map((item) => (
-          <RailButton
-            key={item.action}
-            isActive={false}
-            item={item}
-            onClick={() => undefined}
-          />
-        ))}
+        <div className="rail-entry">
+          <button
+            aria-label="Open tools menu"
+            className={`rail-button ${isToolMenuOpen ? "rail-button-active" : ""}`}
+            onClick={() => onToolMenuOpenChange(!isToolMenuOpen)}
+            type="button"
+          >
+            <Ellipsis aria-hidden="true" size={22} strokeWidth={1.9} />
+          </button>
+          <span className="rail-tooltip" role="tooltip">
+            Tools
+          </span>
+          {isToolMenuOpen ? (
+            <div className="rail-menu" role="menu">
+              <button className="rail-menu-item" onClick={onSettings} role="menuitem" type="button">
+                Settings
+              </button>
+              <button className="rail-menu-item" onClick={onCheckForUpdates} role="menuitem" type="button">
+                Check for Updates
+              </button>
+              <button className="rail-menu-item" onClick={onAbout} role="menuitem" type="button">
+                About
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </aside>
   );

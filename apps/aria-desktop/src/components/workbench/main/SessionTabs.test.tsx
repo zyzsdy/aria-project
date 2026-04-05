@@ -8,8 +8,8 @@ describe("SessionTabs structure", () => {
       <SessionTabs
         onCloseTab={() => undefined}
         onSelectTab={() => undefined}
-        selectedSessionId="session-1"
-        tabs={[{ sessionId: "session-1", title: "Example tab" }]}
+        selectedTabId="terminal:session-1"
+        tabs={[{ tabId: "terminal:session-1", title: "Example tab" }]}
       />
     );
 

@@ -14,20 +14,20 @@ import {
 import { getTabStripThumbMetrics } from "./tabStripScrollbar";
 
 type SessionTab = {
-  sessionId: string;
+  tabId: string;
   title: string;
 };
 
 type SessionTabsProps = {
   tabs: SessionTab[];
-  selectedSessionId: string | null;
-  onSelectTab: (sessionId: string) => void;
-  onCloseTab: (sessionId: string) => void;
+  selectedTabId: string | null;
+  onSelectTab: (tabId: string) => void;
+  onCloseTab: (tabId: string) => void;
 };
 
 export function SessionTabs({
   tabs,
-  selectedSessionId,
+  selectedTabId,
   onSelectTab,
   onCloseTab
 }: SessionTabsProps) {
@@ -113,12 +113,12 @@ export function SessionTabs({
         <div ref={tabStripTrackRef} className="tab-strip-track">
           {tabs.map((tab) => (
             <div
-              key={tab.sessionId}
-              className={`tab ${tab.sessionId === selectedSessionId ? "tab-active" : ""}`}
+              key={tab.tabId}
+              className={`tab ${tab.tabId === selectedTabId ? "tab-active" : ""}`}
             >
               <button
                 className="tab-button"
-                onClick={() => onSelectTab(tab.sessionId)}
+                onClick={() => onSelectTab(tab.tabId)}
                 type="button"
               >
                 <span className="tab-title">{tab.title}</span>
@@ -126,7 +126,7 @@ export function SessionTabs({
               <button
                 aria-label={`Close ${tab.title}`}
                 className="tab-close-button"
-                onClick={() => onCloseTab(tab.sessionId)}
+                onClick={() => onCloseTab(tab.tabId)}
                 type="button"
               >
                 <X aria-hidden="true" size={14} strokeWidth={2} />

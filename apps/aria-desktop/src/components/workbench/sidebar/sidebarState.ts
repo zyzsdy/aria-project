@@ -11,3 +11,7 @@ export function toggleSidebar(
 
   return openSidebar === action ? null : action;
 }
+
+export function toggleToolMenu(isOpen: boolean) {
+  return !isOpen;
+}

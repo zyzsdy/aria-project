@@ -1,133 +1,54 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import {
+  type AppSettings,
   type AttachViewerResponse,
   type SessionMetadataDelta,
   type SessionStreamFrame,
   type SessionStreamMetadata,
-  type SessionSummary
+  type SessionSummary,
+  type SettingsGroup,
+  type UpdateAppSettingsPayload
 } from "@aria/types";
 import { CanvasAddon } from "@xterm/addon-canvas";
 import { FitAddon } from "@xterm/addon-fit";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
-import { Terminal } from "xterm";
+import { Terminal } from "@xterm/xterm";
+import { AboutDialog } from "./components/workbench/AboutDialog";
 import { ActivityRail } from "./components/workbench/ActivityRail";
 import { WorkbenchMain } from "./components/workbench/main/WorkbenchMain";
+import {
+  closeWorkbenchTab,
+  createHtmlTab,
+  createTerminalTab,
+  openWorkbenchTab,
+  reconcileOpenTabs,
+  type WorkbenchTab
+} from "./components/workbench/main/tabState";
 import { SidebarHost } from "./components/workbench/sidebar/SidebarHost";
 import type { SidebarPanel } from "./components/workbench/sidebar/sidebarState";
-import {
-  closeSessionTab,
-  openSessionTab,
-  reconcileOpenTabs,
-  type TabState
-} from "./components/workbench/main/tabState";
 import { UtilityPanelHost } from "./components/workbench/utility/UtilityPanelHost";
+import { DEFAULT_APP_SETTINGS, applySettingsToTerminal, cloneSettings } from "./settings/appSettings";
+import { createSettingsStore } from "./settings/settingsStore";
+import { createTerminalOptions } from "./terminal/options";
+import { activateUnicode11 } from "./terminal/unicode";
 
 type StreamState = "detached" | "attaching" | "attached" | "reconnecting";
-type ThemePreset = "north" | "oxide" | "forest";
 
-type TerminalTheme = {
-  background: string;
-  foreground: string;
-  cursor: string;
-  selectionBackground: string;
-  black: string;
-  red: string;
-  green: string;
-  yellow: string;
-  blue: string;
-  magenta: string;
-  cyan: string;
-  white: string;
-  brightBlack: string;
-  brightRed: string;
-  brightGreen: string;
-  brightYellow: string;
-  brightBlue: string;
-  brightMagenta: string;
-  brightCyan: string;
-  brightWhite: string;
-};
-
-const DEFAULT_FONT_FAMILY = "Cascadia Mono";
-const DEFAULT_FONT_SIZE = 14;
-const DEFAULT_THEME_PRESET: ThemePreset = "north";
-
-const TERMINAL_THEMES: Record<ThemePreset, TerminalTheme> = {
-  north: {
-    background: "#05080d",
-    foreground: "#dce8f7",
-    cursor: "#7ac2ff",
-    selectionBackground: "#28405d99",
-    black: "#1a2029",
-    red: "#dd7b7b",
-    green: "#7ecf9a",
-    yellow: "#d8b56b",
-    blue: "#6aa9ff",
-    magenta: "#b999ff",
-    cyan: "#6fd3d7",
-    white: "#dce8f7",
-    brightBlack: "#556170",
-    brightRed: "#ff9f9f",
-    brightGreen: "#9bf0b7",
-    brightYellow: "#efca7d",
-    brightBlue: "#8bc0ff",
-    brightMagenta: "#cfb7ff",
-    brightCyan: "#92e8ea",
-    brightWhite: "#ffffff"
-  },
-  oxide: {
-    background: "#0a0c10",
-    foreground: "#e6e1d8",
-    cursor: "#f1a75f",
-    selectionBackground: "#61442888",
-    black: "#1f1e1b",
-    red: "#d87572",
-    green: "#8fbe77",
-    yellow: "#d4bc72",
-    blue: "#7ea9cf",
-    magenta: "#b89fd9",
-    cyan: "#7cc3bd",
-    white: "#e6e1d8",
-    brightBlack: "#656158",
-    brightRed: "#f59d99",
-    brightGreen: "#acd88c",
-    brightYellow: "#efd08b",
-    brightBlue: "#9cc5ea",
-    brightMagenta: "#cfb7ef",
-    brightCyan: "#9ce0d9",
-    brightWhite: "#fff9ef"
-  },
-  forest: {
-    background: "#07100c",
-    foreground: "#dae7dd",
-    cursor: "#6fd1a0",
-    selectionBackground: "#1f4f3c99",
-    black: "#17201c",
-    red: "#d98282",
-    green: "#75cb90",
-    yellow: "#d8c07a",
-    blue: "#7caed4",
-    magenta: "#b7a0da",
-    cyan: "#72d2c1",
-    white: "#dae7dd",
-    brightBlack: "#56665f",
-    brightRed: "#eea3a3",
-    brightGreen: "#96e2af",
-    brightYellow: "#ecd28f",
-    brightBlue: "#98c7ec",
-    brightMagenta: "#d0bbee",
-    brightCyan: "#8ae9d7",
-    brightWhite: "#fbfff9"
-  }
-};
+const SETTINGS_TAB = createHtmlTab("settings", "Settings");
 
 export function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [openTabSessionIds, setOpenTabSessionIds] = useState<string[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [tabs, setTabs] = useState<WorkbenchTab[]>([]);
+  const [selectedTabId, setSelectedTabId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AppSettings>(cloneSettings(DEFAULT_APP_SETTINGS));
+  const [selectedSettingsGroup, setSelectedSettingsGroup] =
+    useState<SettingsGroup>("appearance");
   const [streamState, setStreamState] = useState<StreamState>("detached");
   const [busy, setBusy] = useState(false);
   const [openSidebar, setOpenSidebar] = useState<SidebarPanel | null>("sessions");
+  const [isToolMenuOpen, setIsToolMenuOpen] = useState(false);
+  const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
+  const [toolMessage, setToolMessage] = useState<string | null>(null);
   const [terminalHost, setTerminalHost] = useState<HTMLDivElement | null>(null);
   const [terminalReady, setTerminalReady] = useState(false);
   const [streamRevision, setStreamRevision] = useState(0);
@@ -135,25 +56,59 @@ export function App() {
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
-  const selectedSessionIdRef = useRef<string | null>(null);
-  const openTabSessionIdsRef = useRef<string[]>([]);
+  const selectedTabIdRef = useRef<string | null>(null);
+  const tabsRef = useRef<WorkbenchTab[]>([]);
+  const settingsRef = useRef<AppSettings>(cloneSettings(DEFAULT_APP_SETTINGS));
   const scheduledSeqRef = useRef(0);
   const appliedSeqRef = useRef(0);
+  const settingsStoreRef = useRef(
+    createSettingsStore({
+      get: () => invoke<AppSettings>("get_app_settings"),
+      update: (payload) => invoke<AppSettings>("update_app_settings", { settings: payload }),
+      resetGroup: (group) => invoke<AppSettings>("reset_app_settings_group", { group })
+    })
+  );
+
+  const activeTab = tabs.find((tab) => tab.id === selectedTabId) ?? null;
+  const selectedSessionId = activeTab?.type === "terminal" ? activeTab.sessionId : null;
+
   const handleTerminalHostRef = useCallback((node: HTMLDivElement | null) => {
     setTerminalHost(node);
   }, []);
 
   useEffect(() => {
     activeSessionIdRef.current = selectedSessionId;
-    selectedSessionIdRef.current = selectedSessionId;
-  }, [selectedSessionId]);
+    selectedTabIdRef.current = selectedTabId;
+  }, [selectedSessionId, selectedTabId]);
 
   useEffect(() => {
-    openTabSessionIdsRef.current = openTabSessionIds;
-  }, [openTabSessionIds]);
+    settingsRef.current = settings;
+  }, [settings]);
 
   useEffect(() => {
-    void refreshWorkbench();
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  useEffect(() => {
+    const settingsStore = settingsStoreRef.current;
+    const unsubscribe = settingsStore.subscribe((nextSettings) => {
+      startTransition(() => {
+        setSettings(cloneSettings(nextSettings));
+      });
+    });
+
+    void (async () => {
+      try {
+        await settingsStore.load();
+        await refreshWorkbench({
+          startupBehavior: settingsStore.getSnapshot().workspace.startupBehavior
+        });
+      } catch (error) {
+        logDesktopError(error);
+      }
+    })();
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -161,19 +116,15 @@ export function App() {
       return;
     }
 
-    const terminal = new Terminal({
-      cursorBlink: true,
-      allowProposedApi: false,
-      fontFamily: DEFAULT_FONT_FAMILY,
-      fontSize: DEFAULT_FONT_SIZE,
-      theme: TERMINAL_THEMES[DEFAULT_THEME_PRESET],
-      scrollback: 2000
-    });
+    const terminal = new Terminal(createTerminalOptions(settings));
+    applySettingsToTerminal(terminal, settings);
+
     const fitAddon = new FitAddon();
     const canvasAddon = new CanvasAddon();
 
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(canvasAddon);
+    activateUnicode11(terminal);
     terminal.open(terminalHost);
     fitAddon.fit();
 
@@ -185,20 +136,41 @@ export function App() {
       void invoke("write_session", { sessionId, data }).catch(logDesktopError);
     });
 
-    const disposeResize = terminal.onResize(
-      ({ cols, rows }: { cols: number; rows: number }) => {
-        const sessionId = activeSessionIdRef.current;
-        if (!sessionId) {
-          return;
-        }
-        void invoke("resize_session", { sessionId, cols, rows }).catch(logDesktopError);
+    const disposeResize = terminal.onResize(({ cols, rows }: { cols: number; rows: number }) => {
+      const sessionId = activeSessionIdRef.current;
+      if (!sessionId) {
+        return;
       }
-    );
+      void invoke("resize_session", { sessionId, cols, rows }).catch(logDesktopError);
+    });
 
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
     });
     resizeObserver.observe(terminalHost);
+
+    const handleContextMenu = (event: MouseEvent) => {
+      if (settingsRef.current.terminal.rightClickBehavior === "menu") {
+        return;
+      }
+
+      event.preventDefault();
+      const sessionId = activeSessionIdRef.current;
+      if (!sessionId || !navigator.clipboard?.readText) {
+        return;
+      }
+
+      void navigator.clipboard
+        .readText()
+        .then((text) => {
+          if (!text) {
+            return;
+          }
+          return invoke("write_session", { sessionId, data: text });
+        })
+        .catch(() => undefined);
+    };
+    terminalHost.addEventListener("contextmenu", handleContextMenu);
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -206,6 +178,7 @@ export function App() {
 
     return () => {
       setTerminalReady(false);
+      terminalHost.removeEventListener("contextmenu", handleContextMenu);
       resizeObserver.disconnect();
       disposeResize.dispose();
       disposeData.dispose();
@@ -214,6 +187,35 @@ export function App() {
       fitAddonRef.current = null;
     };
   }, [terminalHost]);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+
+    applySettingsToTerminal(terminal, settings);
+    fitAddonRef.current?.fit();
+  }, [settings]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (
+        settings.workspace.closeConfirmation !== "confirm_running_sessions" ||
+        !sessions.some((session) => session.status === "running")
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [sessions, settings.workspace.closeConfirmation]);
 
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -275,9 +277,7 @@ export function App() {
 
       if (frame.type === "session.metadata") {
         startTransition(() => {
-          setSessions((current) =>
-            patchSessionDelta(current, frame.sessionId, frame.metadata)
-          );
+          setSessions((current) => patchSessionDelta(current, frame.sessionId, frame.metadata));
         });
         acknowledge(frame.viewerId, frame.seq);
         return;
@@ -330,29 +330,40 @@ export function App() {
     appliedSeqRef.current = 0;
   }
 
-  function applyTabState(nextTabState: TabState) {
-    setOpenTabSessionIds(nextTabState.openTabSessionIds);
-    if (nextTabState.selectedSessionId !== selectedSessionIdRef.current) {
+  function applyTabState(nextTabState: { tabs: WorkbenchTab[]; selectedTabId: string | null }) {
+    setTabs(nextTabState.tabs);
+    if (nextTabState.selectedTabId !== selectedTabIdRef.current) {
       resetStreamSequence();
     }
-    setSelectedSessionId(nextTabState.selectedSessionId);
+    setSelectedTabId(nextTabState.selectedTabId);
   }
 
-  async function refreshWorkbench(options?: { ensureOpenSessionId?: string }) {
+  async function refreshWorkbench(options?: {
+    ensureTab?: WorkbenchTab;
+    startupBehavior?: AppSettings["workspace"]["startupBehavior"];
+  }) {
     setBusy(true);
 
     try {
       const nextSessions = await invoke<SessionSummary[]>("list_sessions");
       const availableSessionIds = nextSessions.map((session) => session.sessionId);
+      const startupTab =
+        !options?.ensureTab &&
+        tabsRef.current.length === 0 &&
+        (options?.startupBehavior ?? settingsRef.current.workspace.startupBehavior) ===
+          "restore_previous" &&
+        nextSessions[0]
+          ? createTerminalTab(nextSessions[0].sessionId)
+          : undefined;
       const nextTabState = reconcileOpenTabs(
-        options?.ensureOpenSessionId
-          ? openSessionTab(
-              openTabSessionIdsRef.current,
-              selectedSessionIdRef.current,
-              options.ensureOpenSessionId
-            ).openTabSessionIds
-          : openTabSessionIdsRef.current,
-        options?.ensureOpenSessionId ?? selectedSessionIdRef.current,
+        options?.ensureTab || startupTab
+          ? openWorkbenchTab(
+              tabsRef.current,
+              selectedTabIdRef.current,
+              options?.ensureTab ?? startupTab!
+            ).tabs
+          : tabsRef.current,
+        options?.ensureTab?.id ?? startupTab?.id ?? selectedTabIdRef.current,
         availableSessionIds
       );
 
@@ -369,22 +380,20 @@ export function App() {
 
   function handleSelectSession(sessionId: string) {
     applyTabState(
-      openSessionTab(openTabSessionIdsRef.current, selectedSessionIdRef.current, sessionId)
+      openWorkbenchTab(tabsRef.current, selectedTabIdRef.current, createTerminalTab(sessionId))
     );
   }
 
-  function handleSelectTab(sessionId: string) {
-    if (sessionId === selectedSessionIdRef.current) {
+  function handleSelectTab(tabId: string) {
+    if (tabId === selectedTabIdRef.current) {
       return;
     }
     resetStreamSequence();
-    setSelectedSessionId(sessionId);
+    setSelectedTabId(tabId);
   }
 
-  function handleCloseTab(sessionId: string) {
-    applyTabState(
-      closeSessionTab(openTabSessionIdsRef.current, selectedSessionIdRef.current, sessionId)
-    );
+  function handleCloseTab(tabId: string) {
+    applyTabState(closeWorkbenchTab(tabsRef.current, selectedTabIdRef.current, tabId));
   }
 
   async function handleCreateSession() {
@@ -395,7 +404,7 @@ export function App() {
         cols: 120,
         rows: 32
       });
-      await refreshWorkbench({ ensureOpenSessionId: created.sessionId });
+      await refreshWorkbench({ ensureTab: createTerminalTab(created.sessionId) });
     } catch (error) {
       logDesktopError(error);
     } finally {
@@ -403,39 +412,93 @@ export function App() {
     }
   }
 
-  return (
-    <main
-      className={`workbench ${openSidebar ? "workbench-sidebar-open" : "workbench-sidebar-closed"}`}
-      data-theme={DEFAULT_THEME_PRESET}
-    >
-      <ActivityRail
-        onOpenSidebarChange={setOpenSidebar}
-        openSidebar={openSidebar}
-      />
+  async function handleUpdateSettings(next: Partial<AppSettings>) {
+    try {
+      await settingsStoreRef.current.update(next as UpdateAppSettingsPayload);
+    } catch (error) {
+      logDesktopError(error);
+    }
+  }
 
-      {openSidebar ? (
-        <SidebarHost
-          busy={busy}
-          onCreateSession={() => void handleCreateSession()}
-          onRefresh={() => void refreshWorkbench()}
-          onSelectSession={handleSelectSession}
+  async function handleResetSettingsGroup(group: SettingsGroup) {
+    try {
+      await settingsStoreRef.current.resetGroup(group);
+    } catch (error) {
+      logDesktopError(error);
+    }
+  }
+
+  function handleOpenSettings() {
+    setIsToolMenuOpen(false);
+    applyTabState(openWorkbenchTab(tabsRef.current, selectedTabIdRef.current, SETTINGS_TAB));
+  }
+
+  function handleCheckForUpdates() {
+    setIsToolMenuOpen(false);
+    setToolMessage("Check for Updates is not wired up yet.");
+  }
+
+  function handleOpenAbout() {
+    setIsToolMenuOpen(false);
+    setIsAboutDialogOpen(true);
+  }
+
+  return (
+    <>
+      <main
+        className={`workbench ${openSidebar ? "workbench-sidebar-open" : "workbench-sidebar-closed"}`}
+        data-theme={settings.appearance.themePreset}
+      >
+        <ActivityRail
+          isToolMenuOpen={isToolMenuOpen}
+          onAbout={handleOpenAbout}
+          onCheckForUpdates={handleCheckForUpdates}
+          onOpenSidebarChange={setOpenSidebar}
+          onSettings={handleOpenSettings}
+          onToolMenuOpenChange={setIsToolMenuOpen}
           openSidebar={openSidebar}
-          selectedSessionId={selectedSessionId}
-          sessions={sessions}
         />
+
+        {openSidebar ? (
+          <SidebarHost
+            busy={busy}
+            onCreateSession={() => void handleCreateSession()}
+            onRefresh={() => void refreshWorkbench()}
+            onSelectSession={handleSelectSession}
+            openSidebar={openSidebar}
+            selectedSessionId={selectedSessionId}
+            sessions={sessions}
+          />
+        ) : null}
+
+        <WorkbenchMain
+          activeTab={activeTab}
+          onCloseTab={handleCloseTab}
+          onResetSettingsGroup={handleResetSettingsGroup}
+          onSelectSettingsGroup={setSelectedSettingsGroup}
+          onSelectTab={handleSelectTab}
+          onUpdateSettings={(next) => void handleUpdateSettings(next)}
+          selectedSettingsGroup={selectedSettingsGroup}
+          sessions={sessions}
+          settings={settings}
+          streamState={streamState}
+          tabs={tabs}
+          terminalHostRef={handleTerminalHostRef}
+        />
+        <UtilityPanelHost isVisible={false} />
+      </main>
+
+      {toolMessage ? (
+        <div className="status-toast">
+          <span>{toolMessage}</span>
+          <button onClick={() => setToolMessage(null)} type="button">
+            Dismiss
+          </button>
+        </div>
       ) : null}
 
-      <WorkbenchMain
-        onCloseTab={handleCloseTab}
-        onSelectTab={handleSelectTab}
-        openTabSessionIds={openTabSessionIds}
-        selectedSessionId={selectedSessionId}
-        sessions={sessions}
-        streamState={streamState}
-        terminalHostRef={handleTerminalHostRef}
-      />
-      <UtilityPanelHost isVisible={false} />
-    </main>
+      <AboutDialog isOpen={isAboutDialogOpen} onClose={() => setIsAboutDialogOpen(false)} />
+    </>
   );
 }
 

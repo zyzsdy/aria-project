@@ -1,64 +1,102 @@
 import { describe, expect, it } from "vitest";
 import {
-  closeSessionTab,
-  openSessionTab,
+  closeWorkbenchTab,
+  createHtmlTab,
+  createTerminalTab,
+  openWorkbenchTab,
   reconcileOpenTabs
 } from "./tabState";
 
-describe("openSessionTab", () => {
-  it("opens a closed session tab and selects it", () => {
-    expect(openSessionTab(["session-a"], null, "session-b")).toEqual({
-      openTabSessionIds: ["session-a", "session-b"],
-      selectedSessionId: "session-b"
+describe("openWorkbenchTab", () => {
+  it("opens a closed terminal tab and selects it", () => {
+    expect(
+      openWorkbenchTab([createTerminalTab("session-a")], "terminal:session-a", createTerminalTab("session-b"))
+    ).toEqual({
+      tabs: [createTerminalTab("session-a"), createTerminalTab("session-b")],
+      selectedTabId: "terminal:session-b"
     });
   });
 
-  it("does not duplicate an already open session tab", () => {
-    expect(openSessionTab(["session-a", "session-b"], "session-a", "session-b")).toEqual({
-      openTabSessionIds: ["session-a", "session-b"],
-      selectedSessionId: "session-b"
+  it("keeps settings as a singleton html tab", () => {
+    expect(
+      openWorkbenchTab(
+        [createTerminalTab("session-a"), createHtmlTab("settings", "Settings")],
+        "terminal:session-a",
+        createHtmlTab("settings", "Settings")
+      )
+    ).toEqual({
+      tabs: [createTerminalTab("session-a"), createHtmlTab("settings", "Settings")],
+      selectedTabId: "html:settings"
     });
   });
 });
 
-describe("closeSessionTab", () => {
+describe("closeWorkbenchTab", () => {
   it("keeps the current selection when closing a different tab", () => {
-    expect(closeSessionTab(["session-a", "session-b", "session-c"], "session-b", "session-a")).toEqual({
-      openTabSessionIds: ["session-b", "session-c"],
-      selectedSessionId: "session-b"
+    expect(
+      closeWorkbenchTab(
+        [createTerminalTab("session-a"), createTerminalTab("session-b"), createHtmlTab("settings", "Settings")],
+        "terminal:session-b",
+        "terminal:session-a"
+      )
+    ).toEqual({
+      tabs: [createTerminalTab("session-b"), createHtmlTab("settings", "Settings")],
+      selectedTabId: "terminal:session-b"
     });
   });
 
   it("selects the left neighbor first when closing the active tab", () => {
-    expect(closeSessionTab(["session-a", "session-b", "session-c"], "session-b", "session-b")).toEqual({
-      openTabSessionIds: ["session-a", "session-c"],
-      selectedSessionId: "session-a"
+    expect(
+      closeWorkbenchTab(
+        [createTerminalTab("session-a"), createTerminalTab("session-b"), createTerminalTab("session-c")],
+        "terminal:session-b",
+        "terminal:session-b"
+      )
+    ).toEqual({
+      tabs: [createTerminalTab("session-a"), createTerminalTab("session-c")],
+      selectedTabId: "terminal:session-a"
     });
   });
 
   it("falls back to the right neighbor and then blank state", () => {
-    expect(closeSessionTab(["session-a", "session-b"], "session-a", "session-a")).toEqual({
-      openTabSessionIds: ["session-b"],
-      selectedSessionId: "session-b"
+    expect(
+      closeWorkbenchTab(
+        [createTerminalTab("session-a"), createHtmlTab("settings", "Settings")],
+        "terminal:session-a",
+        "terminal:session-a"
+      )
+    ).toEqual({
+      tabs: [createHtmlTab("settings", "Settings")],
+      selectedTabId: "html:settings"
     });
 
-    expect(closeSessionTab(["session-a"], "session-a", "session-a")).toEqual({
-      openTabSessionIds: [],
-      selectedSessionId: null
+    expect(closeWorkbenchTab([createTerminalTab("session-a")], "terminal:session-a", "terminal:session-a")).toEqual({
+      tabs: [],
+      selectedTabId: null
     });
   });
 });
 
 describe("reconcileOpenTabs", () => {
-  it("removes tabs for sessions that no longer exist without reopening closed tabs", () => {
+  it("removes stale terminal tabs while preserving html tabs", () => {
     expect(
-      reconcileOpenTabs(["session-a", "session-b", "session-c"], "session-b", [
-        "session-a",
-        "session-c"
-      ])
+      reconcileOpenTabs(
+        [
+          createTerminalTab("session-a"),
+          createHtmlTab("settings", "Settings"),
+          createTerminalTab("session-b"),
+          createTerminalTab("session-c")
+        ],
+        "terminal:session-b",
+        ["session-a", "session-c"]
+      )
     ).toEqual({
-      openTabSessionIds: ["session-a", "session-c"],
-      selectedSessionId: "session-a"
+      tabs: [
+        createTerminalTab("session-a"),
+        createHtmlTab("settings", "Settings"),
+        createTerminalTab("session-c")
+      ],
+      selectedTabId: "terminal:session-a"
     });
   });
 });

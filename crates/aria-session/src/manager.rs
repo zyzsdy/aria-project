@@ -643,8 +643,27 @@ impl SessionActor {
             return;
         }
         self.terminal.process(bytes);
+        self.capture_terminal_title();
         self.scrollback.ingest(bytes);
         stream_bytes.push(bytes.to_vec());
+    }
+
+    fn capture_terminal_title(&mut self) {
+        let Some(title) = self.terminal.take_recent_title() else {
+            return;
+        };
+        if title.is_empty() || title == self.metadata.title {
+            return;
+        }
+        self.metadata.title = title.clone();
+        self.emit_metadata(SessionMetadataDelta {
+            title: Some(title),
+            status: None,
+            cwd: None,
+            shell: None,
+            process_id: None,
+            exit_code: None,
+        });
     }
 
     fn snapshot(&self) -> SessionSnapshot {
@@ -1213,6 +1232,28 @@ mod tests {
         assert_eq!(page.lines.len(), 2);
         assert_eq!(page.lines[0].text, "two");
         assert_eq!(page.lines[1].text, "three");
+    }
+
+    #[tokio::test]
+    async fn process_output_emits_title_metadata_delta() {
+        let (session_id, sender) = spawn_test_actor(TerminalSize::new(80, 24), 1024);
+        let (_attach, mut frames) = attach_test_viewer(&sender, session_id, None).await;
+        let _ = frames.recv().await.expect("rehydrate");
+
+        sender
+            .send(SessionCommand::ProcessOutput(
+                b"\x1b]2;Workspace shell\x07".to_vec(),
+            ))
+            .await
+            .expect("send output");
+
+        match frames.recv().await.expect("metadata frame") {
+            SessionStreamFrame::SessionMetadata { metadata, .. } => {
+                assert_eq!(metadata.title.as_deref(), Some("Workspace shell"));
+                assert_eq!(metadata.status, None);
+            }
+            other => panic!("unexpected frame: {other:?}"),
+        }
     }
 
     #[test]

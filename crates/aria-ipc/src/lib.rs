@@ -137,6 +137,207 @@ pub struct SessionResizeRequest {
 #[serde(rename_all = "camelCase")]
 pub struct EmptyResponse {}
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemePreset {
+    #[default]
+    North,
+    Oxide,
+    Forest,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CursorStyle {
+    #[default]
+    Block,
+    Underline,
+    Bar,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RightClickBehavior {
+    #[default]
+    Paste,
+    Menu,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BellMode {
+    #[default]
+    Off,
+    Visual,
+    System,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StartupBehavior {
+    OpenEmpty,
+    #[default]
+    RestorePrevious,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CloseConfirmation {
+    Never,
+    #[default]
+    ConfirmRunningSessions,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SettingsGroup {
+    Appearance,
+    Terminal,
+    Workspace,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[serde(rename_all = "camelCase")]
+pub struct AppearanceSettings {
+    pub theme_preset: ThemePreset,
+    pub font_family: String,
+    pub font_size: u16,
+    pub line_height: f32,
+    pub letter_spacing: i16,
+    pub cursor_style: CursorStyle,
+    pub cursor_blink: bool,
+}
+
+impl Default for AppearanceSettings {
+    fn default() -> Self {
+        Self {
+            theme_preset: ThemePreset::North,
+            font_family: "Cascadia Mono".to_string(),
+            font_size: 14,
+            line_height: 1.2,
+            letter_spacing: 0,
+            cursor_style: CursorStyle::Block,
+            cursor_blink: true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalSettings {
+    pub scrollback_lines: usize,
+    pub right_click_behavior: RightClickBehavior,
+    pub copy_on_select: bool,
+    pub bell_mode: BellMode,
+}
+
+impl Default for TerminalSettings {
+    fn default() -> Self {
+        Self {
+            scrollback_lines: 2_000,
+            right_click_behavior: RightClickBehavior::Paste,
+            copy_on_select: false,
+            bell_mode: BellMode::Off,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSettings {
+    pub startup_behavior: StartupBehavior,
+    pub close_confirmation: CloseConfirmation,
+}
+
+impl Default for WorkspaceSettings {
+    fn default() -> Self {
+        Self {
+            startup_behavior: StartupBehavior::RestorePrevious,
+            close_confirmation: CloseConfirmation::ConfirmRunningSessions,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    pub appearance: AppearanceSettings,
+    pub terminal: TerminalSettings,
+    pub workspace: WorkspaceSettings,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppearanceSettingsPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_preset: Option<ThemePreset>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_height: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub letter_spacing: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_style: Option<CursorStyle>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_blink: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalSettingsPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scrollback_lines: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_click_behavior: Option<RightClickBehavior>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub copy_on_select: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bell_mode: Option<BellMode>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSettingsPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub startup_behavior: Option<StartupBehavior>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close_confirmation: Option<CloseConfirmation>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAppSettingsPayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub appearance: Option<AppearanceSettingsPatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<TerminalSettingsPatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<WorkspaceSettingsPatch>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSettingsRequest;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSettingsRequest {
+    pub settings: UpdateAppSettingsPayload,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetSettingsGroupRequest {
+    pub group: SettingsGroup,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewerRole {
@@ -458,6 +659,24 @@ pub trait SessionService: Send + Sync {
     ) -> Result<ReadScrollbackResponse, ContractError>;
 }
 
+#[async_trait]
+pub trait SettingsService: Send + Sync {
+    async fn get_settings(
+        &self,
+        request: GetSettingsRequest,
+    ) -> Result<AppSettings, ContractError>;
+
+    async fn update_settings(
+        &self,
+        request: UpdateSettingsRequest,
+    ) -> Result<AppSettings, ContractError>;
+
+    async fn reset_settings_group(
+        &self,
+        request: ResetSettingsGroupRequest,
+    ) -> Result<AppSettings, ContractError>;
+}
+
 #[derive(Clone, Debug)]
 pub struct DaemonClient {
     addr: String,
@@ -561,6 +780,27 @@ impl DaemonClient {
         self.call("sessions.readScrollback", &request).await
     }
 
+    pub async fn get_settings(
+        &self,
+        request: GetSettingsRequest,
+    ) -> Result<AppSettings, ClientError> {
+        self.call("settings.get", &request).await
+    }
+
+    pub async fn update_settings(
+        &self,
+        request: UpdateSettingsRequest,
+    ) -> Result<AppSettings, ClientError> {
+        self.call("settings.update", &request).await
+    }
+
+    pub async fn reset_settings_group(
+        &self,
+        request: ResetSettingsGroupRequest,
+    ) -> Result<AppSettings, ClientError> {
+        self.call("settings.resetGroup", &request).await
+    }
+
     pub async fn call<Req, Resp>(&self, method: &str, payload: &Req) -> Result<Resp, ClientError>
     where
         Req: Serialize + ?Sized,
@@ -613,10 +853,13 @@ impl DaemonClient {
 #[cfg(test)]
 mod tests {
     use super::{
-        AttachViewerRequest, BufferKind, DaemonInfo, HealthRequest, HealthResponse,
-        PayloadEncoding, ReadScrollbackResponse, ReplayMode, RehydrateReason, RpcRequest,
-        RpcResponse, ScrollbackLine, ScrollbackStats, SessionMetadata, SessionMetadataDelta,
-        SessionSnapshot, SessionStreamFrame, SessionStreamMetadata, SessionSummary, ViewerRole,
+        AppSettings, AttachViewerRequest, BufferKind, CloseConfirmation, DaemonInfo,
+        HealthRequest, HealthResponse, PayloadEncoding, ReadScrollbackResponse, ReplayMode,
+        RehydrateReason, ResetSettingsGroupRequest, RightClickBehavior, RpcRequest, RpcResponse,
+        ScrollbackLine, ScrollbackStats, SessionMetadata, SessionMetadataDelta, SessionSnapshot,
+        SessionStreamFrame, SessionStreamMetadata, SessionSummary, SettingsGroup,
+        StartupBehavior, ThemePreset, UpdateAppSettingsPayload, UpdateSettingsRequest,
+        ViewerRole,
     };
     use aria_model::{
         AppInfo, CursorPosition, HealthStatus, SessionId, SessionStatus, SessionTransportKind,
@@ -865,5 +1108,38 @@ mod tests {
     fn replay_mode_serializes_in_snake_case() {
         let json = serde_json::to_string(&ReplayMode::Rehydrate).expect("serialize replay mode");
         assert_eq!(json, "\"rehydrate\"");
+    }
+
+    #[test]
+    fn app_settings_round_trip_with_expected_defaults() {
+        let settings = AppSettings::default();
+        let json = serde_json::to_string(&settings).expect("serialize app settings");
+        let decoded: AppSettings = serde_json::from_str(&json).expect("deserialize app settings");
+
+        assert_eq!(decoded.appearance.theme_preset, ThemePreset::North);
+        assert_eq!(decoded.terminal.right_click_behavior, RightClickBehavior::Paste);
+        assert_eq!(
+            decoded.workspace.close_confirmation,
+            CloseConfirmation::ConfirmRunningSessions
+        );
+        assert_eq!(decoded.workspace.startup_behavior, StartupBehavior::RestorePrevious);
+    }
+
+    #[test]
+    fn settings_requests_serialize_with_camel_case_shape() {
+        let update = serde_json::to_value(UpdateSettingsRequest {
+            settings: UpdateAppSettingsPayload::default(),
+        })
+        .expect("serialize update settings request");
+        let reset = serde_json::to_value(ResetSettingsGroupRequest {
+            group: SettingsGroup::Appearance,
+        })
+        .expect("serialize reset settings request");
+
+        assert!(update.get("settings").is_some());
+        assert_eq!(
+            reset.get("group").and_then(|value| value.as_str()),
+            Some("appearance")
+        );
     }
 }

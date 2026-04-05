@@ -13,16 +13,33 @@ pub trait TerminalEngine: Send {
     fn resize(&mut self, size: TerminalSize);
     fn snapshot(&self) -> TerminalSnapshotData;
     fn rehydrate(&self) -> Vec<u8>;
+    fn take_recent_title(&mut self) -> Option<String>;
+}
+
+#[derive(Default)]
+struct TitleCallbacks {
+    recent_title: Option<String>,
+}
+
+impl vt100::Callbacks for TitleCallbacks {
+    fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+        self.recent_title = Some(String::from_utf8_lossy(title).into_owned());
+    }
 }
 
 pub struct Vt100TerminalEngine {
-    parser: vt100::Parser,
+    parser: vt100::Parser<TitleCallbacks>,
 }
 
 impl Vt100TerminalEngine {
     pub fn new(size: TerminalSize, scrollback_len: usize) -> Self {
         Self {
-            parser: vt100::Parser::new(size.rows, size.cols, scrollback_len),
+            parser: vt100::Parser::new_with_callbacks(
+                size.rows,
+                size.cols,
+                scrollback_len,
+                TitleCallbacks::default(),
+            ),
         }
     }
 }
@@ -62,6 +79,10 @@ impl TerminalEngine for Vt100TerminalEngine {
         }
         state.extend_from_slice(&screen.state_formatted());
         state
+    }
+
+    fn take_recent_title(&mut self) -> Option<String> {
+        self.parser.callbacks_mut().recent_title.take()
     }
 }
 
@@ -117,5 +138,17 @@ mod tests {
 
         assert_eq!(restored.snapshot(), source.snapshot());
         assert!(restored.snapshot().alternate_screen);
+    }
+
+    #[test]
+    fn engine_reports_window_title_changes_from_osc_sequences() {
+        let mut engine = Vt100TerminalEngine::new(TerminalSize::new(20, 4), 128);
+
+        assert_eq!(engine.take_recent_title(), None);
+
+        engine.process(b"\x1b]2;build log\x07");
+
+        assert_eq!(engine.take_recent_title(), Some("build log".to_string()));
+        assert_eq!(engine.take_recent_title(), None);
     }
 }

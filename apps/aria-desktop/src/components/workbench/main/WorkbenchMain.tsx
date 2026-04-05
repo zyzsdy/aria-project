@@ -1,52 +1,72 @@
+import type { AppSettings, SettingsGroup } from "@aria/types";
 import type { SessionSummary } from "@aria/types";
 import type { RefCallback } from "react";
+import { HtmlTabHost } from "./HtmlTabHost";
 import { SessionTabs } from "./SessionTabs";
 import { TerminalPane } from "./TerminalPane";
+import type { WorkbenchTab } from "./tabState";
 
 type WorkbenchMainProps = {
+  tabs: WorkbenchTab[];
+  activeTab: WorkbenchTab | null;
   sessions: SessionSummary[];
-  openTabSessionIds: string[];
-  selectedSessionId: string | null;
+  settings: AppSettings;
+  selectedSettingsGroup: SettingsGroup;
   streamState: "detached" | "attaching" | "attached" | "reconnecting";
   terminalHostRef: RefCallback<HTMLDivElement>;
-  onSelectTab: (sessionId: string) => void;
-  onCloseTab: (sessionId: string) => void;
+  onSelectTab: (tabId: string) => void;
+  onCloseTab: (tabId: string) => void;
+  onSelectSettingsGroup: (group: SettingsGroup) => void;
+  onUpdateSettings: (next: Partial<AppSettings>) => void;
+  onResetSettingsGroup: (group: SettingsGroup) => void;
 };
 
 export function WorkbenchMain({
+  tabs,
+  activeTab,
   sessions,
-  openTabSessionIds,
-  selectedSessionId,
+  settings,
+  selectedSettingsGroup,
   streamState,
   terminalHostRef,
   onSelectTab,
-  onCloseTab
+  onCloseTab,
+  onSelectSettingsGroup,
+  onUpdateSettings,
+  onResetSettingsGroup
 }: WorkbenchMainProps) {
-  const tabs = openTabSessionIds.flatMap((sessionId) => {
-    const session = sessions.find((current) => current.sessionId === sessionId);
-    return session ? [session] : [];
-  });
-
-  const activeSessionId = tabs.some((tab) => tab.sessionId === selectedSessionId)
-    ? selectedSessionId
-    : null;
-
   return (
     <section className="main-shell">
       <SessionTabs
         onCloseTab={onCloseTab}
         onSelectTab={onSelectTab}
-        selectedSessionId={activeSessionId}
+        selectedTabId={activeTab?.id ?? null}
         tabs={tabs.map((tab) => ({
-          sessionId: tab.sessionId,
-          title: tab.title
+          tabId: tab.id,
+          title:
+            tab.type === "terminal"
+              ? sessions.find((session) => session.sessionId === tab.sessionId)?.title ??
+                tab.sessionId
+              : tab.title
         }))}
       />
-      <TerminalPane
-        selectedSessionId={activeSessionId}
-        streamState={streamState}
-        terminalHostRef={terminalHostRef}
-      />
+
+      {activeTab?.type === "html" ? (
+        <HtmlTabHost
+          onResetSettingsGroup={onResetSettingsGroup}
+          onSelectSettingsGroup={onSelectSettingsGroup}
+          onUpdateSettings={onUpdateSettings}
+          pageId={activeTab.pageId}
+          selectedSettingsGroup={selectedSettingsGroup}
+          settings={settings}
+        />
+      ) : (
+        <TerminalPane
+          selectedSessionId={activeTab?.type === "terminal" ? activeTab.sessionId : null}
+          streamState={streamState}
+          terminalHostRef={terminalHostRef}
+        />
+      )}
     </section>
   );
 }

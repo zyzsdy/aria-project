@@ -30,6 +30,13 @@ export const VIEWER_DETACHED_REASONS = [
   "session-closed",
   "server-shutdown"
 ] as const;
+export const APP_THEME_PRESETS = ["north", "oxide", "forest"] as const;
+export const CURSOR_STYLES = ["block", "underline", "bar"] as const;
+export const RIGHT_CLICK_BEHAVIORS = ["paste", "menu"] as const;
+export const BELL_MODES = ["off", "visual", "system"] as const;
+export const STARTUP_BEHAVIORS = ["open_empty", "restore_previous"] as const;
+export const CLOSE_CONFIRMATIONS = ["never", "confirm_running_sessions"] as const;
+export const SETTINGS_GROUPS = ["appearance", "terminal", "workspace"] as const;
 
 export type HealthStatus = (typeof HEALTH_STATUSES)[number];
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
@@ -40,6 +47,13 @@ export type ReplayMode = (typeof REPLAY_MODES)[number];
 export type BufferKind = (typeof BUFFER_KINDS)[number];
 export type PayloadEncoding = (typeof PAYLOAD_ENCODINGS)[number];
 export type ViewerDetachedReason = (typeof VIEWER_DETACHED_REASONS)[number];
+export type ThemePreset = (typeof APP_THEME_PRESETS)[number];
+export type CursorStyle = (typeof CURSOR_STYLES)[number];
+export type RightClickBehavior = (typeof RIGHT_CLICK_BEHAVIORS)[number];
+export type BellMode = (typeof BELL_MODES)[number];
+export type StartupBehavior = (typeof STARTUP_BEHAVIORS)[number];
+export type CloseConfirmation = (typeof CLOSE_CONFIRMATIONS)[number];
+export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
 
 export interface AppInfo {
   readonly name: string;
@@ -88,6 +102,84 @@ export interface SessionSummary {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
+
+export interface AppearanceSettings {
+  readonly themePreset: ThemePreset;
+  readonly fontFamily: string;
+  readonly fontSize: number;
+  readonly lineHeight: number;
+  readonly letterSpacing: number;
+  readonly cursorStyle: CursorStyle;
+  readonly cursorBlink: boolean;
+}
+
+export interface TerminalSettings {
+  readonly scrollbackLines: number;
+  readonly rightClickBehavior: RightClickBehavior;
+  readonly copyOnSelect: boolean;
+  readonly bellMode: BellMode;
+}
+
+export interface WorkspaceSettings {
+  readonly startupBehavior: StartupBehavior;
+  readonly closeConfirmation: CloseConfirmation;
+}
+
+export interface AppSettings {
+  readonly appearance: AppearanceSettings;
+  readonly terminal: TerminalSettings;
+  readonly workspace: WorkspaceSettings;
+}
+
+export interface AppearanceSettingsPatch {
+  readonly themePreset?: ThemePreset;
+  readonly fontFamily?: string;
+  readonly fontSize?: number;
+  readonly lineHeight?: number;
+  readonly letterSpacing?: number;
+  readonly cursorStyle?: CursorStyle;
+  readonly cursorBlink?: boolean;
+}
+
+export interface TerminalSettingsPatch {
+  readonly scrollbackLines?: number;
+  readonly rightClickBehavior?: RightClickBehavior;
+  readonly copyOnSelect?: boolean;
+  readonly bellMode?: BellMode;
+}
+
+export interface WorkspaceSettingsPatch {
+  readonly startupBehavior?: StartupBehavior;
+  readonly closeConfirmation?: CloseConfirmation;
+}
+
+export interface UpdateAppSettingsPayload {
+  readonly appearance?: AppearanceSettingsPatch;
+  readonly terminal?: TerminalSettingsPatch;
+  readonly workspace?: WorkspaceSettingsPatch;
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  appearance: {
+    themePreset: "north",
+    fontFamily: "Cascadia Mono",
+    fontSize: 14,
+    lineHeight: 1.2,
+    letterSpacing: 0,
+    cursorStyle: "block",
+    cursorBlink: true
+  },
+  terminal: {
+    scrollbackLines: 2000,
+    rightClickBehavior: "paste",
+    copyOnSelect: false,
+    bellMode: "off"
+  },
+  workspace: {
+    startupBehavior: "restore_previous",
+    closeConfirmation: "confirm_running_sessions"
+  }
+};
 
 export interface SessionMetadata extends SessionSummary {
   readonly cwd: string | null;

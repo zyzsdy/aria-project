@@ -3,11 +3,12 @@
 use anyhow::{anyhow, Context, Result};
 use aria_core::{init_observability, AppRole, BootstrapContext};
 use aria_ipc::{
-    AttachViewerRequest, AttachViewerResponse, CreateLocalSessionRequest,
-    CreateLocalSessionResponse, DaemonClient, DetachViewerRequest, HealthRequest,
-    HealthResponse, ListSessionsRequest, RpcRequest, RpcResponse, SessionSelector,
-    SessionResizeRequest, SessionSnapshot, SessionStreamFrame, SessionSummary,
-    SessionWriteRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
+    AppSettings, AttachViewerRequest, AttachViewerResponse, CreateLocalSessionRequest,
+    CreateLocalSessionResponse, DaemonClient, DetachViewerRequest, GetSettingsRequest,
+    HealthRequest, HealthResponse, ListSessionsRequest, ResetSettingsGroupRequest,
+    RpcRequest, RpcResponse, SessionSelector, SessionResizeRequest, SessionSnapshot,
+    SessionStreamFrame, SessionSummary, SessionWriteRequest, SettingsGroup,
+    UpdateAppSettingsPayload, UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, SessionId, TerminalSize, ViewerId};
 use std::{
@@ -219,6 +220,57 @@ async fn viewer_ack(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+async fn get_app_settings(state: State<'_, DesktopState>) -> Result<AppSettings, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    state
+        .daemon
+        .client
+        .get_settings(GetSettingsRequest)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn update_app_settings(
+    state: State<'_, DesktopState>,
+    settings: UpdateAppSettingsPayload,
+) -> Result<AppSettings, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    state
+        .daemon
+        .client
+        .update_settings(UpdateSettingsRequest { settings })
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn reset_app_settings_group(
+    state: State<'_, DesktopState>,
+    group: SettingsGroup,
+) -> Result<AppSettings, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    state
+        .daemon
+        .client
+        .reset_settings_group(ResetSettingsGroupRequest { group })
+        .await
+        .map_err(|error| error.to_string())
+}
+
 fn main() -> Result<()> {
     let app_info = AppInfo::new(
         "Aria Desktop",
@@ -259,7 +311,10 @@ fn main() -> Result<()> {
             resize_session,
             attach_session_stream,
             detach_viewer,
-            viewer_ack
+            viewer_ack,
+            get_app_settings,
+            update_app_settings,
+            reset_app_settings_group
         ])
         .run(tauri::generate_context!())?;
 

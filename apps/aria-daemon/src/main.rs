@@ -1,10 +1,13 @@
+mod settings;
+
 use anyhow::{Context, Result};
 use aria_core::{init_observability, AppRole, BootstrapContext};
 use aria_ipc::{
     AttachViewerRequest, ContractError, CreateLocalSessionRequest, DaemonClient, DaemonInfo,
-    DetachViewerRequest, EmptyResponse, HealthRequest, HealthResponse, ListSessionsRequest,
-    ReadScrollbackRequest, RpcRequest, RpcResponse, SessionResizeRequest, SessionSelector,
-    SessionWriteRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
+    DetachViewerRequest, EmptyResponse, GetSettingsRequest, HealthRequest, HealthResponse,
+    ListSessionsRequest, ReadScrollbackRequest, ResetSettingsGroupRequest, RpcRequest,
+    RpcResponse, SessionResizeRequest, SessionSelector, SessionWriteRequest,
+    UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, HealthStatus};
 use aria_session::SessionManager;
@@ -21,6 +24,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
 };
+use crate::settings::SettingsStore;
 use tracing::{info, warn};
 
 #[derive(Debug, Parser)]
@@ -35,10 +39,10 @@ enum Command {
     Serve,
 }
 
-#[derive(Clone)]
 struct DaemonState {
     app_info: AppInfo,
     manager: SessionManager,
+    settings: SettingsStore,
     started_at: String,
 }
 
@@ -119,6 +123,7 @@ async fn serve(context: BootstrapContext, app_info: AppInfo) -> Result<()> {
     let state = Arc::new(DaemonState {
         app_info,
         manager: SessionManager::new(),
+        settings: SettingsStore::load(context.paths.config_dir.join("settings.toml"))?,
         started_at: started_at.clone(),
     });
 
@@ -255,6 +260,24 @@ async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcRe
         },
         "sessions.readScrollback" => match decode::<ReadScrollbackRequest>(request.payload) {
             Ok(payload) => match state.manager.read_scrollback(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(error),
+            },
+            Err(error) => err(error),
+        },
+        "settings.get" => match decode::<GetSettingsRequest>(request.payload) {
+            Ok(_payload) => ok(state.settings.get().await),
+            Err(error) => err(error),
+        },
+        "settings.update" => match decode::<UpdateSettingsRequest>(request.payload) {
+            Ok(payload) => match state.settings.update(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(error),
+            },
+            Err(error) => err(error),
+        },
+        "settings.resetGroup" => match decode::<ResetSettingsGroupRequest>(request.payload) {
+            Ok(payload) => match state.settings.reset_group(payload).await {
                 Ok(response) => ok(response),
                 Err(error) => err(error),
             },

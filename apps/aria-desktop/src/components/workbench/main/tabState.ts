@@ -1,66 +1,90 @@
-export type TabState = {
-  openTabSessionIds: string[];
-  selectedSessionId: string | null;
+export type HtmlPageId = "settings";
+
+export type TerminalTab = {
+  id: `terminal:${string}`;
+  type: "terminal";
+  sessionId: string;
 };
 
-export function openSessionTab(
-  openTabSessionIds: string[],
-  selectedSessionId: string | null,
-  sessionId: string
-): TabState {
+export type HtmlTab = {
+  id: `html:${HtmlPageId}`;
+  type: "html";
+  pageId: HtmlPageId;
+  title: string;
+};
+
+export type WorkbenchTab = TerminalTab | HtmlTab;
+
+export type WorkbenchTabState = {
+  tabs: WorkbenchTab[];
+  selectedTabId: string | null;
+};
+
+export function createTerminalTab(sessionId: string): TerminalTab {
   return {
-    openTabSessionIds: openTabSessionIds.includes(sessionId)
-      ? openTabSessionIds
-      : [...openTabSessionIds, sessionId],
-    selectedSessionId: sessionId
+    id: `terminal:${sessionId}`,
+    type: "terminal",
+    sessionId
   };
 }
 
-export function closeSessionTab(
-  openTabSessionIds: string[],
-  selectedSessionId: string | null,
-  sessionId: string
-): TabState {
-  const closingIndex = openTabSessionIds.indexOf(sessionId);
-  if (closingIndex === -1) {
-    return { openTabSessionIds, selectedSessionId };
-  }
-
-  const nextOpenTabSessionIds = openTabSessionIds.filter(
-    (openSessionId) => openSessionId !== sessionId
-  );
-
-  if (selectedSessionId !== sessionId) {
-    return {
-      openTabSessionIds: nextOpenTabSessionIds,
-      selectedSessionId
-    };
-  }
-
-  const nextSelectedSessionId =
-    openTabSessionIds[closingIndex - 1] ?? openTabSessionIds[closingIndex + 1] ?? null;
-
+export function createHtmlTab(pageId: HtmlPageId, title: string): HtmlTab {
   return {
-    openTabSessionIds: nextOpenTabSessionIds,
-    selectedSessionId: nextSelectedSessionId
+    id: `html:${pageId}`,
+    type: "html",
+    pageId,
+    title
+  };
+}
+
+export function openWorkbenchTab(
+  tabs: WorkbenchTab[],
+  selectedTabId: string | null,
+  tab: WorkbenchTab
+): WorkbenchTabState {
+  return {
+    tabs: tabs.some((current) => current.id === tab.id) ? tabs : [...tabs, tab],
+    selectedTabId: tab.id
+  };
+}
+
+export function closeWorkbenchTab(
+  tabs: WorkbenchTab[],
+  selectedTabId: string | null,
+  tabId: string
+): WorkbenchTabState {
+  const closingIndex = tabs.findIndex((tab) => tab.id === tabId);
+  if (closingIndex === -1) {
+    return { tabs, selectedTabId };
+  }
+
+  const nextTabs = tabs.filter((tab) => tab.id !== tabId);
+  if (selectedTabId !== tabId) {
+    return { tabs: nextTabs, selectedTabId };
+  }
+
+  const nextSelectedTabId = tabs[closingIndex - 1]?.id ?? tabs[closingIndex + 1]?.id ?? null;
+  return {
+    tabs: nextTabs,
+    selectedTabId: nextSelectedTabId
   };
 }
 
 export function reconcileOpenTabs(
-  openTabSessionIds: string[],
-  selectedSessionId: string | null,
+  tabs: WorkbenchTab[],
+  selectedTabId: string | null,
   availableSessionIds: string[]
-): TabState {
+): WorkbenchTabState {
   const availableSessionIdSet = new Set(availableSessionIds);
-  const nextOpenTabSessionIds = openTabSessionIds.filter((sessionId) =>
-    availableSessionIdSet.has(sessionId)
+  const nextTabs = tabs.filter(
+    (tab) => tab.type === "html" || availableSessionIdSet.has(tab.sessionId)
   );
+  const selectedStillExists = selectedTabId
+    ? nextTabs.some((tab) => tab.id === selectedTabId)
+    : false;
 
   return {
-    openTabSessionIds: nextOpenTabSessionIds,
-    selectedSessionId:
-      selectedSessionId && availableSessionIdSet.has(selectedSessionId)
-        ? selectedSessionId
-        : nextOpenTabSessionIds[0] ?? null
+    tabs: nextTabs,
+    selectedTabId: selectedStillExists ? selectedTabId : nextTabs[0]?.id ?? null
   };
 }
