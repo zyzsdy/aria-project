@@ -1,5 +1,14 @@
 import { X } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
+import { defineMessages } from "../i18n/messages";
+import { useT } from "../i18n/react";
+
+const MODAL_DIALOG_MESSAGES = defineMessages({
+  close: {
+    key: "dialogs.modal.close",
+    defaultMessage: "Close dialog"
+  }
+});
 
 type ModalDialogProps = {
   isOpen: boolean;
@@ -10,6 +19,8 @@ type ModalDialogProps = {
 };
 
 export function ModalDialog({ isOpen, title, onClose, children, footer }: ModalDialogProps) {
+  const t = useT();
+
   useEffect(() => {
     if (!isOpen) {
       return undefined;
@@ -37,7 +48,7 @@ export function ModalDialog({ isOpen, title, onClose, children, footer }: ModalD
         <header className="dialog-modal-header">
           <h2 className="dialog-modal-title">{title}</h2>
           <button
-            aria-label="Close dialog"
+            aria-label={t(MODAL_DIALOG_MESSAGES.close)}
             className="dialog-icon-button"
             onClick={onClose}
             type="button"

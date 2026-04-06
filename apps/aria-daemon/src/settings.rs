@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use aria_ipc::{
-    AppSettings, AppearanceSettings, ResetSettingsGroupRequest, SettingsGroup,
-    TerminalSettings, UpdateAppSettingsPayload, UpdateSettingsRequest, WorkspaceSettings,
+    AppSettings, AppearanceSettings, LocalizationSettings, ResetSettingsGroupRequest,
+    SettingsGroup, TerminalSettings, UpdateAppSettingsPayload, UpdateSettingsRequest,
+    WorkspaceSettings,
 };
 use std::{
     fs,
@@ -108,6 +109,12 @@ fn apply_settings_patch(settings: &mut AppSettings, patch: &UpdateAppSettingsPay
             settings.workspace.close_confirmation = close_confirmation;
         }
     }
+
+    if let Some(localization) = &patch.localization {
+        if let Some(locale) = &localization.locale {
+            settings.localization.locale = locale.clone();
+        }
+    }
 }
 
 fn reset_settings_group(settings: &mut AppSettings, group: SettingsGroup) {
@@ -121,6 +128,9 @@ fn reset_settings_group(settings: &mut AppSettings, group: SettingsGroup) {
         SettingsGroup::Workspace => {
             settings.workspace = WorkspaceSettings::default();
         }
+        SettingsGroup::Localization => {
+            settings.localization = LocalizationSettings::default();
+        }
     }
 }
 
@@ -128,8 +138,8 @@ fn reset_settings_group(settings: &mut AppSettings, group: SettingsGroup) {
 mod tests {
     use super::{apply_settings_patch, reset_settings_group};
     use aria_ipc::{
-        AppSettings, AppearanceSettingsPatch, SettingsGroup, TerminalSettingsPatch,
-        UpdateAppSettingsPayload, WorkspaceSettingsPatch,
+        AppSettings, AppearanceSettingsPatch, LocalizationSettingsPatch, SettingsGroup,
+        TerminalSettingsPatch, UpdateAppSettingsPayload, WorkspaceSettingsPatch,
     };
 
     #[test]
@@ -151,6 +161,9 @@ mod tests {
                     close_confirmation: Some(aria_ipc::CloseConfirmation::Never),
                     ..WorkspaceSettingsPatch::default()
                 }),
+                localization: Some(LocalizationSettingsPatch {
+                    locale: Some("ja-JP".to_string()),
+                }),
             },
         );
 
@@ -160,6 +173,7 @@ mod tests {
             settings.workspace.close_confirmation,
             aria_ipc::CloseConfirmation::Never
         );
+        assert_eq!(settings.localization.locale, "ja-JP");
         assert_eq!(settings.appearance.theme_preset, aria_ipc::ThemePreset::North);
     }
 
@@ -168,10 +182,11 @@ mod tests {
         let mut settings = AppSettings::default();
         settings.appearance.font_size = 16;
         settings.terminal.scrollback_lines = 5_000;
+        settings.localization.locale = "ja-JP".to_string();
 
-        reset_settings_group(&mut settings, SettingsGroup::Appearance);
+        reset_settings_group(&mut settings, SettingsGroup::Localization);
 
-        assert_eq!(settings.appearance, aria_ipc::AppearanceSettings::default());
+        assert_eq!(settings.localization, aria_ipc::LocalizationSettings::default());
         assert_eq!(settings.terminal.scrollback_lines, 5_000);
     }
 }

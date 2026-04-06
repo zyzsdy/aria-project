@@ -194,6 +194,7 @@ pub enum SettingsGroup {
     Appearance,
     Terminal,
     Workspace,
+    Localization,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -261,6 +262,21 @@ impl Default for WorkspaceSettings {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalizationSettings {
+    pub locale: String,
+}
+
+impl Default for LocalizationSettings {
+    fn default() -> Self {
+        Self {
+            locale: "system".to_string(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(rename_all = "camelCase")]
@@ -268,6 +284,7 @@ pub struct AppSettings {
     pub appearance: AppearanceSettings,
     pub terminal: TerminalSettings,
     pub workspace: WorkspaceSettings,
+    pub localization: LocalizationSettings,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -313,6 +330,13 @@ pub struct WorkspaceSettingsPatch {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LocalizationSettingsPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateAppSettingsPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<AppearanceSettingsPatch>,
@@ -320,6 +344,8 @@ pub struct UpdateAppSettingsPayload {
     pub terminal: Option<TerminalSettingsPatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace: Option<WorkspaceSettingsPatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub localization: Option<LocalizationSettingsPatch>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -1123,6 +1149,7 @@ mod tests {
             CloseConfirmation::ConfirmRunningSessions
         );
         assert_eq!(decoded.workspace.startup_behavior, StartupBehavior::RestorePrevious);
+        assert_eq!(decoded.localization.locale, "system");
     }
 
     #[test]
@@ -1135,11 +1162,21 @@ mod tests {
             group: SettingsGroup::Appearance,
         })
         .expect("serialize reset settings request");
+        let localization = serde_json::to_value(ResetSettingsGroupRequest {
+            group: SettingsGroup::Localization,
+        })
+        .expect("serialize localization reset settings request");
 
         assert!(update.get("settings").is_some());
         assert_eq!(
             reset.get("group").and_then(|value| value.as_str()),
             Some("appearance")
         );
+        assert_eq!(
+            localization.get("group").and_then(|value| value.as_str()),
+            Some("localization")
+        );
     }
 }
+
+

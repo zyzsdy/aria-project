@@ -1,10 +1,13 @@
+import { DEFAULT_APP_SETTINGS } from "@aria/types";
 import { describe, expect, it } from "vitest";
 import { createTerminalOptions } from "./options";
 
 describe("createTerminalOptions", () => {
   it("enables the proposed API needed by the Unicode11 addon", () => {
     const options = createTerminalOptions({
+      ...DEFAULT_APP_SETTINGS,
       appearance: {
+        ...DEFAULT_APP_SETTINGS.appearance,
         themePreset: "north",
         fontFamily: "Cascadia Mono",
         fontSize: 14,
@@ -14,12 +17,14 @@ describe("createTerminalOptions", () => {
         cursorBlink: true
       },
       terminal: {
+        ...DEFAULT_APP_SETTINGS.terminal,
         scrollbackLines: 2000,
         rightClickBehavior: "paste",
         copyOnSelect: false,
         bellMode: "off"
       },
       workspace: {
+        ...DEFAULT_APP_SETTINGS.workspace,
         startupBehavior: "restore_previous",
         closeConfirmation: "confirm_running_sessions"
       }

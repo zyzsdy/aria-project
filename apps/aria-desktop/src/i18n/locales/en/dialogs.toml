@@ -1,0 +1,12 @@
+[dialogs.about]
+aria_core_not_connected = "Aria Core not connected"
+aria_core_version = "Aria Core version: {version}"
+author_label = "Author: Zyzsdy"
+desktop_version = "Aria Desktop version: {version}"
+logo_alt = "Aria Terminal logo"
+product_name = "Aria Terminal"
+title = "About"
+webview_version = "Webview2 version: {version}"
+
+[dialogs.modal]
+close = "Close dialog"

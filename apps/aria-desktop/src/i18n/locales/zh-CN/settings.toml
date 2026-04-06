@@ -1,0 +1,82 @@
+[settings.page]
+kicker = "工作区设置"
+sections_aria_label = "设置分区"
+
+[settings.sections.appearance]
+label = "外观"
+description = "主题、字体和光标调节。"
+heading = "外观"
+copy = "调整终端和界面的当前显示效果。"
+
+[settings.sections.terminal]
+label = "终端"
+description = "回滚和交互默认值。"
+heading = "终端"
+copy = "设置终端交互默认值和历史记录限制。"
+
+[settings.sections.workspace]
+label = "工作区"
+description = "启动和关闭行为。"
+heading = "工作区"
+copy = "选择应用启动时恢复什么，以及关闭活动工作时的处理方式。"
+
+[settings.sections.localization]
+label = "语言"
+description = "语言和区域偏好。"
+heading = "语言"
+copy = "选择桌面壳层使用的语言。"
+
+[settings.fields]
+font_family = "字体"
+font_size = "字号"
+line_height = "行高"
+letter_spacing = "字间距"
+cursor_style = "光标样式"
+cursor_blinks = "光标闪烁"
+scrollback_lines = "回滚行数"
+right_click = "右键操作"
+bell_mode = "提示铃模式"
+copy_on_select = "选择时复制"
+startup_behavior = "启动行为"
+close_confirmation = "关闭确认"
+language = "语言"
+
+[settings.themes.north]
+label = "北境"
+blurb = "冷调蓝色对比，适合高密度终端工作。"
+
+[settings.themes.oxide]
+label = "氧化"
+blurb = "温暖的琥珀中性色，带来更柔和的辉光。"
+
+[settings.themes.forest]
+label = "森林"
+blurb = "低饱和绿色配色，视觉更平静专注。"
+
+[settings.options.cursor_style]
+block = "块状"
+underline = "下划线"
+bar = "竖线"
+
+[settings.options.right_click]
+paste = "粘贴"
+menu = "菜单"
+
+[settings.options.bell_mode]
+off = "关闭"
+visual = "视觉提示"
+system = "系统提示音"
+
+[settings.options.startup_behavior]
+open_empty = "打开空白工作区"
+restore_previous = "恢复上次工作区"
+
+[settings.options.close_confirmation]
+never = "从不"
+confirm_running_sessions = "有运行中会话时确认"
+
+[settings.options.locale]
+system = "跟随系统语言"
+en = "English"
+zh_cn = "简体中文"
+ja = "日本語"

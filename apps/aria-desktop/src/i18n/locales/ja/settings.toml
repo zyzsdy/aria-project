@@ -1,0 +1,82 @@
+[settings.page]
+kicker = "ワークスペース設定"
+sections_aria_label = "設定セクション"
+
+[settings.sections.appearance]
+label = "外観"
+description = "テーマ、フォント、カーソルの調整。"
+heading = "外観"
+copy = "端末とシェルの見た目を調整します。"
+
+[settings.sections.terminal]
+label = "ターミナル"
+description = "スクロールバックと操作の既定値。"
+heading = "ターミナル"
+copy = "ターミナル操作の既定値と履歴の上限を設定します。"
+
+[settings.sections.workspace]
+label = "ワークスペース"
+description = "起動時と終了時の動作。"
+heading = "ワークスペース"
+copy = "起動時に復元する内容と、作業中に閉じる際の挙動を選びます。"
+
+[settings.sections.localization]
+label = "言語"
+description = "言語とロケールの設定。"
+heading = "言語"
+copy = "デスクトップシェルで使用する言語を選択します。"
+
+[settings.fields]
+font_family = "フォント"
+font_size = "フォントサイズ"
+line_height = "行の高さ"
+letter_spacing = "文字間隔"
+cursor_style = "カーソルの形"
+cursor_blinks = "カーソルを点滅させる"
+scrollback_lines = "スクロールバック行数"
+right_click = "右クリック"
+bell_mode = "ベルモード"
+copy_on_select = "選択時にコピー"
+startup_behavior = "起動時の動作"
+close_confirmation = "終了確認"
+language = "言語"
+
+[settings.themes.north]
+label = "ノース"
+blurb = "高密度な端末作業向けの、冷たい青のコントラスト。"
+
+[settings.themes.oxide]
+label = "オキサイド"
+blurb = "柔らかな輝きのある、暖色のアンバーニュートラル。"
+
+[settings.themes.forest]
+label = "フォレスト"
+blurb = "落ち着いて集中しやすい、控えめなグリーンパレット。"
+
+[settings.options.cursor_style]
+block = "ブロック"
+underline = "下線"
+bar = "バー"
+
+[settings.options.right_click]
+paste = "貼り付け"
+menu = "メニュー"
+
+[settings.options.bell_mode]
+off = "オフ"
+visual = "視覚通知"
+system = "システム"
+
+[settings.options.startup_behavior]
+open_empty = "空の状態で開く"
+restore_previous = "前回を復元"
+
+[settings.options.close_confirmation]
+never = "しない"
+confirm_running_sessions = "実行中セッションがある場合は確認"
+
+[settings.options.locale]
+system = "システム言語を使う"
+en = "English"
+zh_cn = "简体中文"
+ja = "日本語"

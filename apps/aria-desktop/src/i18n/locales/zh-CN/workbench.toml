@@ -1,0 +1,25 @@
+[workbench.activity_rail]
+aria_label = "工作台分区"
+sessions = "会话"
+collections = "集合"
+open_tools_menu = "打开工具菜单"
+
+[workbench.sidebar]
+panel_aria_label = "{panel} 面板"
+refresh_sessions = "刷新会话"
+create_session = "创建会话"
+
+[workbench.sidebar.sessions]
+title = "会话"
+empty = "还没有会话。"
+
+[workbench.sidebar.collections]
+title = "集合"
+
+[workbench.tabs]
+aria_label = "会话标签页"
+settings_tab = "设置"
+close_tab = "关闭 {title}"
+
+[workbench.status]
+check_updates_unavailable = "检查更新功能暂未接通。"

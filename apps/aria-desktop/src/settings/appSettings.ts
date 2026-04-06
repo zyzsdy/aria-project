@@ -6,14 +6,12 @@ export { DEFAULT_APP_SETTINGS };
 
 export type ThemeOption = {
   id: ThemePreset;
-  label: string;
-  blurb: string;
 };
 
 export const THEME_OPTIONS: ThemeOption[] = [
-  { id: "north", label: "North", blurb: "Cold blue contrast for dense terminal work." },
-  { id: "oxide", label: "Oxide", blurb: "Warm amber neutrals with softer glow." },
-  { id: "forest", label: "Forest", blurb: "Muted green palette with calmer focus." }
+  { id: "north" },
+  { id: "oxide" },
+  { id: "forest" }
 ];
 
 const TERMINAL_THEMES: Record<ThemePreset, ITheme> = {
@@ -109,7 +107,8 @@ export function cloneSettings(settings: AppSettings) {
   return {
     appearance: { ...settings.appearance },
     terminal: { ...settings.terminal },
-    workspace: { ...settings.workspace }
+    workspace: { ...settings.workspace },
+    localization: { ...settings.localization }
   } satisfies AppSettings;
 }
 

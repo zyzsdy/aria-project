@@ -1,0 +1,10 @@
+[common.actions]
+dismiss = "閉じる"
+close = "閉じる"
+reset_to_defaults = "既定値に戻す"
+
+[common.labels]
+settings = "設定"
+about = "このアプリについて"
+tools = "ツール"
+check_for_updates = "アップデートを確認"

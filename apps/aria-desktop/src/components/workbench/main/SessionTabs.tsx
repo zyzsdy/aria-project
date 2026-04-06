@@ -7,11 +7,21 @@ import {
   type WheelEvent
 } from "react";
 import { X } from "lucide-react";
-import {
-  getTabStripScrollDelta,
-  shouldHandleTabStripWheel
-} from "./tabStripScroll";
+import { defineMessages } from "../../../i18n/messages";
+import { useT } from "../../../i18n/react";
+import { getTabStripScrollDelta, shouldHandleTabStripWheel } from "./tabStripScroll";
 import { getTabStripThumbMetrics } from "./tabStripScrollbar";
+
+const SESSION_TAB_MESSAGES = defineMessages({
+  ariaLabel: {
+    key: "workbench.tabs.aria_label",
+    defaultMessage: "Session tabs"
+  },
+  closeTab: {
+    key: "workbench.tabs.close_tab",
+    defaultMessage: "Close {title}"
+  }
+});
 
 type SessionTab = {
   tabId: string;
@@ -25,12 +35,8 @@ type SessionTabsProps = {
   onCloseTab: (tabId: string) => void;
 };
 
-export function SessionTabs({
-  tabs,
-  selectedTabId,
-  onSelectTab,
-  onCloseTab
-}: SessionTabsProps) {
+export function SessionTabs({ tabs, selectedTabId, onSelectTab, onCloseTab }: SessionTabsProps) {
+  const t = useT();
   const tabStripRef = useRef<HTMLElement | null>(null);
   const tabStripTrackRef = useRef<HTMLDivElement | null>(null);
   const [thumbMetrics, setThumbMetrics] = useState(() => ({
@@ -105,7 +111,7 @@ export function SessionTabs({
     <div className="tab-strip-shell">
       <nav
         ref={tabStripRef}
-        aria-label="Session tabs"
+        aria-label={t(SESSION_TAB_MESSAGES.ariaLabel)}
         className="tab-strip"
         onScroll={syncThumbMetrics}
         onWheel={handleWheel}
@@ -116,15 +122,11 @@ export function SessionTabs({
               key={tab.tabId}
               className={`tab ${tab.tabId === selectedTabId ? "tab-active" : ""}`}
             >
-              <button
-                className="tab-button"
-                onClick={() => onSelectTab(tab.tabId)}
-                type="button"
-              >
+              <button className="tab-button" onClick={() => onSelectTab(tab.tabId)} type="button">
                 <span className="tab-title">{tab.title}</span>
               </button>
               <button
-                aria-label={`Close ${tab.title}`}
+                aria-label={t(SESSION_TAB_MESSAGES.closeTab, { title: tab.title })}
                 className="tab-close-button"
                 onClick={() => onCloseTab(tab.tabId)}
                 type="button"

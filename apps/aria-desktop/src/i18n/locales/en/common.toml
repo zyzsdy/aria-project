@@ -1,0 +1,10 @@
+[common.actions]
+close = "Close"
+dismiss = "Dismiss"
+reset_to_defaults = "Reset to defaults"
+
+[common.labels]
+about = "About"
+check_for_updates = "Check for Updates"
+settings = "Settings"
+tools = "Tools"

@@ -35,7 +35,8 @@ describe("createSettingsStore", () => {
         fontSize: 16
       },
       terminal: DEFAULT_APP_SETTINGS.terminal,
-      workspace: DEFAULT_APP_SETTINGS.workspace
+      workspace: DEFAULT_APP_SETTINGS.workspace,
+      localization: DEFAULT_APP_SETTINGS.localization
     });
   });
 
@@ -59,6 +60,25 @@ describe("createSettingsStore", () => {
         bellMode: "visual"
       }
     });
+  });
+
+  it("updates and resets localization independently", async () => {
+    const store = createSettingsStore(createFakeApi());
+    await store.load();
+
+    await store.update({
+      localization: {
+        locale: "ja-JP"
+      }
+    });
+
+    expect(store.getSnapshot().localization).toEqual({
+      locale: "ja-JP"
+    });
+
+    await store.resetGroup("localization");
+
+    expect(store.getSnapshot().localization).toEqual(DEFAULT_APP_SETTINGS.localization);
   });
 });
 
@@ -97,6 +117,10 @@ function mergeSettings(
     workspace: {
       ...current.workspace,
       ...payload.workspace
+    },
+    localization: {
+      ...current.localization,
+      ...payload.localization
     }
   };
 }

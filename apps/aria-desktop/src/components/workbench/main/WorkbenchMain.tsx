@@ -5,7 +5,9 @@ import type {
   SessionSummary,
   SettingsGroup
 } from "@aria/types";
+import { useT } from "../../../i18n/react";
 import { HtmlTabHost } from "./HtmlTabHost";
+import { getHtmlPageTitle } from "./htmlPageTitles";
 import { SessionTabs } from "./SessionTabs";
 import { TerminalWorkspace } from "./TerminalWorkspace";
 import type { TerminalTab, WorkbenchTab } from "./tabState";
@@ -43,6 +45,7 @@ export function WorkbenchMain({
   onUpdateSettings,
   onResetSettingsGroup
 }: WorkbenchMainProps) {
+  const t = useT();
   const terminalTabs = tabs.filter((tab): tab is TerminalTab => tab.type === "terminal");
   const htmlTab = activeTab?.type === "html" ? activeTab : null;
   const showTerminalWorkspace = terminalTabs.length > 0 || !htmlTab;
@@ -59,7 +62,7 @@ export function WorkbenchMain({
             tab.type === "terminal"
               ? sessions.find((session) => session.sessionId === tab.sessionId)?.title ??
                 tab.sessionId
-              : tab.title
+              : getHtmlPageTitle(tab.pageId, t)
         }))}
       />
 

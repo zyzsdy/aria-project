@@ -1,0 +1,82 @@
+[settings.fields]
+bell_mode = "Bell mode"
+close_confirmation = "Close confirmation"
+copy_on_select = "Copy on select"
+cursor_blinks = "Cursor blinks"
+cursor_style = "Cursor style"
+font_family = "Font family"
+font_size = "Font size"
+language = "Language"
+letter_spacing = "Letter spacing"
+line_height = "Line height"
+right_click = "Right click"
+scrollback_lines = "Scrollback lines"
+startup_behavior = "Startup behavior"
+
+[settings.options.bell_mode]
+off = "Off"
+system = "System"
+visual = "Visual"
+
+[settings.options.close_confirmation]
+confirm_running_sessions = "Confirm with running sessions"
+never = "Never"
+
+[settings.options.cursor_style]
+bar = "Bar"
+block = "Block"
+underline = "Underline"
+
+[settings.options.locale]
+en = "English"
+ja = "Japanese"
+system = "Use system language"
+zh_cn = "Simplified Chinese"
+
+[settings.options.right_click]
+menu = "Menu"
+paste = "Paste"
+
+[settings.options.startup_behavior]
+open_empty = "Open empty"
+restore_previous = "Restore previous"
+
+[settings.page]
+kicker = "Workspace Settings"
+sections_aria_label = "Settings sections"
+
+[settings.sections.appearance]
+copy = "Adjust how the terminal and shell look right now."
+description = "Theme, font, and cursor tuning."
+heading = "Appearance"
+label = "Appearance"
+
+[settings.sections.localization]
+copy = "Choose the language used by the desktop shell."
+description = "Language and locale preferences."
+heading = "Localization"
+label = "Localization"
+
+[settings.sections.terminal]
+copy = "Set terminal interaction defaults and history limits."
+description = "Scrollback and interaction defaults."
+heading = "Terminal"
+label = "Terminal"
+
+[settings.sections.workspace]
+copy = "Choose what the app restores and how it handles closing active work."
+description = "Launch and close behavior."
+heading = "Workspace"
+label = "Workspace"
+
+[settings.themes.forest]
+blurb = "Muted green palette with calmer focus."
+label = "Forest"
+
+[settings.themes.north]
+blurb = "Cold blue contrast for dense terminal work."
+label = "North"
+
+[settings.themes.oxide]
+blurb = "Warm amber neutrals with softer glow."
+label = "Oxide"

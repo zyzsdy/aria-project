@@ -11,6 +11,7 @@ import { startTransition, useEffect, useRef, useState } from "react";
 import { AboutDialog } from "./components/workbench/AboutDialog";
 import { ActivityRail } from "./components/workbench/ActivityRail";
 import { WorkbenchMain } from "./components/workbench/main/WorkbenchMain";
+import { getHtmlPageTitle } from "./components/workbench/main/htmlPageTitles";
 import {
   closeWorkbenchTab,
   createHtmlTab,
@@ -22,10 +23,27 @@ import {
 import { SidebarHost } from "./components/workbench/sidebar/SidebarHost";
 import type { SidebarPanel } from "./components/workbench/sidebar/sidebarState";
 import { UtilityPanelHost } from "./components/workbench/utility/UtilityPanelHost";
+import { BUNDLED_CATALOG_SOURCE } from "./i18n/bundledCatalogSource";
+import { defineMessages } from "./i18n/messages";
+import { DESKTOP_I18N_NAMESPACES } from "./i18n/namespaces";
+import { I18nProvider, useT } from "./i18n/react";
 import { DEFAULT_APP_SETTINGS, cloneSettings } from "./settings/appSettings";
 import { createSettingsStore } from "./settings/settingsStore";
 
-const SETTINGS_TAB = createHtmlTab("settings", "Settings");
+type ToolNotice = "check_updates_unavailable" | null;
+
+const APP_MESSAGES = defineMessages({
+  checkUpdatesUnavailable: {
+    key: "workbench.status.check_updates_unavailable",
+    defaultMessage: "Check for Updates is not wired up yet."
+  },
+  dismiss: {
+    key: "common.actions.dismiss",
+    defaultMessage: "Dismiss"
+  }
+});
+
+const CATALOG_SOURCES = [BUNDLED_CATALOG_SOURCE] as const;
 
 export function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -38,7 +56,7 @@ export function App() {
   const [openSidebar, setOpenSidebar] = useState<SidebarPanel | null>("sessions");
   const [isToolMenuOpen, setIsToolMenuOpen] = useState(false);
   const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
-  const [toolMessage, setToolMessage] = useState<string | null>(null);
+  const [toolNotice, setToolNotice] = useState<ToolNotice>(null);
 
   const selectedTabIdRef = useRef<string | null>(null);
   const tabsRef = useRef<WorkbenchTab[]>([]);
@@ -53,6 +71,7 @@ export function App() {
 
   const activeTab = tabs.find((tab) => tab.id === selectedTabId) ?? null;
   const selectedSessionId = activeTab?.type === "terminal" ? activeTab.sessionId : null;
+  const systemLocale = getSystemLocale();
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -201,20 +220,53 @@ export function App() {
     }
   }
 
-  function handleOpenSettings() {
-    setIsToolMenuOpen(false);
-    applyTabState(openWorkbenchTab(tabsRef.current, selectedTabIdRef.current, SETTINGS_TAB));
+  function handleOpenSettingsTab(title: string) {
+    applyTabState(
+      openWorkbenchTab(tabsRef.current, selectedTabIdRef.current, createHtmlTab("settings", title))
+    );
   }
 
-  function handleCheckForUpdates() {
-    setIsToolMenuOpen(false);
-    setToolMessage("Check for Updates is not wired up yet.");
-  }
-
-  function handleOpenAbout() {
-    setIsToolMenuOpen(false);
-    setIsAboutDialogOpen(true);
-  }
+  return (
+    <I18nProvider
+      locale={settings.localization.locale}
+      namespaces={DESKTOP_I18N_NAMESPACES}
+      sources={CATALOG_SOURCES}
+      systemLocale={systemLocale}
+    >
+      <AppShell
+        activeTab={activeTab}
+        busy={busy}
+        isAboutDialogOpen={isAboutDialogOpen}
+        isToolMenuOpen={isToolMenuOpen}
+        onCheckForUpdates={() => setToolNotice("check_updates_unavailable")}
+        onCloseAboutDialog={() => setIsAboutDialogOpen(false)}
+        onCloseToolNotice={() => setToolNotice(null)}
+        onCloseTab={handleCloseTab}
+        onCreateSession={() => void handleCreateSession()}
+        onOpenAbout={() => setIsAboutDialogOpen(true)}
+        onOpenSettingsTab={handleOpenSettingsTab}
+        onOpenSidebarChange={setOpenSidebar}
+        onRefresh={() => void refreshWorkbench()}
+        onResetSettingsGroup={handleResetSettingsGroup}
+        onSelectSession={handleSelectSession}
+        onSelectSettingsGroup={setSelectedSettingsGroup}
+        onSelectTab={handleSelectTab}
+        onStreamDetached={handleStreamDetached}
+        onStreamError={logDesktopError}
+        onStreamMetadata={handleStreamMetadata}
+        onStreamMetadataDelta={handleStreamMetadataDelta}
+        onToolMenuOpenChange={setIsToolMenuOpen}
+        onUpdateSettings={(next) => void handleUpdateSettings(next)}
+        openSidebar={openSidebar}
+        selectedSessionId={selectedSessionId}
+        selectedSettingsGroup={selectedSettingsGroup}
+        sessions={sessions}
+        settings={settings}
+        tabs={tabs}
+        toolNotice={toolNotice}
+      />
+    </I18nProvider>
+  );
 
   function handleStreamMetadata(sessionId: string, metadata: SessionStreamMetadata) {
     startTransition(() => {
@@ -231,6 +283,89 @@ export function App() {
   function handleStreamDetached(_sessionId: string) {
     void refreshWorkbench();
   }
+}
+
+type AppShellProps = {
+  activeTab: WorkbenchTab | null;
+  busy: boolean;
+  isAboutDialogOpen: boolean;
+  isToolMenuOpen: boolean;
+  onCheckForUpdates: () => void;
+  onCloseAboutDialog: () => void;
+  onCloseToolNotice: () => void;
+  onCloseTab: (tabId: string) => void;
+  onCreateSession: () => void;
+  onOpenAbout: () => void;
+  onOpenSettingsTab: (title: string) => void;
+  onOpenSidebarChange: (next: SidebarPanel | null) => void;
+  onRefresh: () => void;
+  onResetSettingsGroup: (group: SettingsGroup) => void;
+  onSelectSession: (sessionId: string) => void;
+  onSelectSettingsGroup: (group: SettingsGroup) => void;
+  onSelectTab: (tabId: string) => void;
+  onStreamDetached: (sessionId: string) => void;
+  onStreamError: (error: unknown) => void;
+  onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
+  onStreamMetadataDelta: (sessionId: string, delta: SessionMetadataDelta) => void;
+  onToolMenuOpenChange: (next: boolean) => void;
+  onUpdateSettings: (next: Partial<AppSettings>) => void;
+  openSidebar: SidebarPanel | null;
+  selectedSessionId: string | null;
+  selectedSettingsGroup: SettingsGroup;
+  sessions: SessionSummary[];
+  settings: AppSettings;
+  tabs: WorkbenchTab[];
+  toolNotice: ToolNotice;
+};
+
+function AppShell({
+  activeTab,
+  busy,
+  isAboutDialogOpen,
+  isToolMenuOpen,
+  onCheckForUpdates,
+  onCloseAboutDialog,
+  onCloseToolNotice,
+  onCloseTab,
+  onCreateSession,
+  onOpenAbout,
+  onOpenSettingsTab,
+  onOpenSidebarChange,
+  onRefresh,
+  onResetSettingsGroup,
+  onSelectSession,
+  onSelectSettingsGroup,
+  onSelectTab,
+  onStreamDetached,
+  onStreamError,
+  onStreamMetadata,
+  onStreamMetadataDelta,
+  onToolMenuOpenChange,
+  onUpdateSettings,
+  openSidebar,
+  selectedSessionId,
+  selectedSettingsGroup,
+  sessions,
+  settings,
+  tabs,
+  toolNotice
+}: AppShellProps) {
+  const t = useT();
+
+  function handleOpenSettings() {
+    onToolMenuOpenChange(false);
+    onOpenSettingsTab(getHtmlPageTitle("settings", t));
+  }
+
+  function handleCheckForUpdates() {
+    onToolMenuOpenChange(false);
+    onCheckForUpdates();
+  }
+
+  function handleOpenAbout() {
+    onToolMenuOpenChange(false);
+    onOpenAbout();
+  }
 
   return (
     <>
@@ -242,18 +377,18 @@ export function App() {
           isToolMenuOpen={isToolMenuOpen}
           onAbout={handleOpenAbout}
           onCheckForUpdates={handleCheckForUpdates}
-          onOpenSidebarChange={setOpenSidebar}
+          onOpenSidebarChange={onOpenSidebarChange}
           onSettings={handleOpenSettings}
-          onToolMenuOpenChange={setIsToolMenuOpen}
+          onToolMenuOpenChange={onToolMenuOpenChange}
           openSidebar={openSidebar}
         />
 
         {openSidebar ? (
           <SidebarHost
             busy={busy}
-            onCreateSession={() => void handleCreateSession()}
-            onRefresh={() => void refreshWorkbench()}
-            onSelectSession={handleSelectSession}
+            onCreateSession={onCreateSession}
+            onRefresh={onRefresh}
+            onSelectSession={onSelectSession}
             openSidebar={openSidebar}
             selectedSessionId={selectedSessionId}
             sessions={sessions}
@@ -262,15 +397,15 @@ export function App() {
 
         <WorkbenchMain
           activeTab={activeTab}
-          onCloseTab={handleCloseTab}
-          onResetSettingsGroup={handleResetSettingsGroup}
-          onStreamDetached={handleStreamDetached}
-          onStreamError={logDesktopError}
-          onStreamMetadata={handleStreamMetadata}
-          onStreamMetadataDelta={handleStreamMetadataDelta}
-          onSelectSettingsGroup={setSelectedSettingsGroup}
-          onSelectTab={handleSelectTab}
-          onUpdateSettings={(next) => void handleUpdateSettings(next)}
+          onCloseTab={onCloseTab}
+          onResetSettingsGroup={onResetSettingsGroup}
+          onSelectSettingsGroup={onSelectSettingsGroup}
+          onSelectTab={onSelectTab}
+          onStreamDetached={onStreamDetached}
+          onStreamError={onStreamError}
+          onStreamMetadata={onStreamMetadata}
+          onStreamMetadataDelta={onStreamMetadataDelta}
+          onUpdateSettings={onUpdateSettings}
           selectedSettingsGroup={selectedSettingsGroup}
           sessions={sessions}
           settings={settings}
@@ -279,18 +414,35 @@ export function App() {
         <UtilityPanelHost isVisible={false} />
       </main>
 
-      {toolMessage ? (
+      {toolNotice ? (
         <div className="status-toast">
-          <span>{toolMessage}</span>
-          <button onClick={() => setToolMessage(null)} type="button">
-            Dismiss
+          <span>{getToolNoticeMessage(toolNotice, t)}</span>
+          <button onClick={onCloseToolNotice} type="button">
+            {t(APP_MESSAGES.dismiss)}
           </button>
         </div>
       ) : null}
 
-      <AboutDialog isOpen={isAboutDialogOpen} onClose={() => setIsAboutDialogOpen(false)} />
+      <AboutDialog isOpen={isAboutDialogOpen} onClose={onCloseAboutDialog} />
     </>
   );
+}
+
+function getToolNoticeMessage(toolNotice: ToolNotice, t: ReturnType<typeof useT>) {
+  switch (toolNotice) {
+    case "check_updates_unavailable":
+      return t(APP_MESSAGES.checkUpdatesUnavailable);
+    default:
+      return "";
+  }
+}
+
+function getSystemLocale() {
+  if (typeof navigator === "undefined") {
+    return undefined;
+  }
+
+  return navigator.languages?.[0] ?? navigator.language;
 }
 
 function patchSessionMetadata(

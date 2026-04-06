@@ -1,4 +1,13 @@
 import type { SessionSummary } from "@aria/types";
+import { defineMessages } from "../../../i18n/messages";
+import { useT } from "../../../i18n/react";
+
+const SESSION_SIDEBAR_MESSAGES = defineMessages({
+  empty: {
+    key: "workbench.sidebar.sessions.empty",
+    defaultMessage: "No sessions yet."
+  }
+});
 
 type SessionSidebarProps = {
   selectedSessionId: string | null;
@@ -11,8 +20,10 @@ export function SessionSidebar({
   sessions,
   onSelectSession
 }: SessionSidebarProps) {
+  const t = useT();
+
   if (sessions.length === 0) {
-    return <p className="sidebar-empty-copy">No sessions yet.</p>;
+    return <p className="sidebar-empty-copy">{t(SESSION_SIDEBAR_MESSAGES.empty)}</p>;
   }
 
   return (

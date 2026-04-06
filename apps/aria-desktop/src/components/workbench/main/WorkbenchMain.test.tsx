@@ -1,3 +1,4 @@
+import { DEFAULT_APP_SETTINGS } from "@aria/types";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -54,7 +55,9 @@ describe("WorkbenchMain", () => {
           }
         ]}
         settings={{
+          ...DEFAULT_APP_SETTINGS,
           appearance: {
+            ...DEFAULT_APP_SETTINGS.appearance,
             themePreset: "north",
             fontFamily: "Cascadia Mono",
             fontSize: 14,
@@ -64,12 +67,14 @@ describe("WorkbenchMain", () => {
             cursorBlink: true
           },
           terminal: {
+            ...DEFAULT_APP_SETTINGS.terminal,
             scrollbackLines: 2000,
             rightClickBehavior: "paste",
             copyOnSelect: false,
             bellMode: "off"
           },
           workspace: {
+            ...DEFAULT_APP_SETTINGS.workspace,
             startupBehavior: "restore_previous",
             closeConfirmation: "confirm_running_sessions"
           }
@@ -110,7 +115,9 @@ describe("WorkbenchMain", () => {
           }
         ]}
         settings={{
+          ...DEFAULT_APP_SETTINGS,
           appearance: {
+            ...DEFAULT_APP_SETTINGS.appearance,
             themePreset: "north",
             fontFamily: "Cascadia Mono",
             fontSize: 14,
@@ -120,12 +127,14 @@ describe("WorkbenchMain", () => {
             cursorBlink: true
           },
           terminal: {
+            ...DEFAULT_APP_SETTINGS.terminal,
             scrollbackLines: 2000,
             rightClickBehavior: "paste",
             copyOnSelect: false,
             bellMode: "off"
           },
           workspace: {
+            ...DEFAULT_APP_SETTINGS.workspace,
             startupBehavior: "restore_previous",
             closeConfirmation: "confirm_running_sessions"
           }

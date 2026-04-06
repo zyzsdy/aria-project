@@ -1,20 +1,56 @@
 import { Ellipsis, FolderKanban, PanelsTopLeft, type LucideIcon } from "lucide-react";
-import {
-  toggleSidebar,
-  type RailAction,
-  type SidebarPanel
-} from "./sidebar/sidebarState";
+import { defineMessages } from "../../i18n/messages";
+import { useT } from "../../i18n/react";
+import { toggleSidebar, type RailAction, type SidebarPanel } from "./sidebar/sidebarState";
 
 type RailItem = {
   action: RailAction;
   icon: LucideIcon;
-  label: string;
+  labelKey: keyof typeof RAIL_ITEM_MESSAGES;
   size: number;
 };
 
+const RAIL_ITEM_MESSAGES = defineMessages({
+  sessions: {
+    key: "workbench.activity_rail.sessions",
+    defaultMessage: "Sessions"
+  },
+  collections: {
+    key: "workbench.activity_rail.collections",
+    defaultMessage: "Collections"
+  }
+});
+
+const ACTIVITY_RAIL_MESSAGES = defineMessages({
+  ariaLabel: {
+    key: "workbench.activity_rail.aria_label",
+    defaultMessage: "Workbench sections"
+  },
+  openToolsMenu: {
+    key: "workbench.activity_rail.open_tools_menu",
+    defaultMessage: "Open tools menu"
+  },
+  tools: {
+    key: "common.labels.tools",
+    defaultMessage: "Tools"
+  },
+  settings: {
+    key: "common.labels.settings",
+    defaultMessage: "Settings"
+  },
+  checkForUpdates: {
+    key: "common.labels.check_for_updates",
+    defaultMessage: "Check for Updates"
+  },
+  about: {
+    key: "common.labels.about",
+    defaultMessage: "About"
+  }
+});
+
 const PRIMARY_ITEMS: RailItem[] = [
-  { action: "sessions", icon: PanelsTopLeft, label: "Sessions", size: 26 },
-  { action: "collections", icon: FolderKanban, label: "Collections", size: 26 }
+  { action: "sessions", icon: PanelsTopLeft, labelKey: "sessions", size: 26 },
+  { action: "collections", icon: FolderKanban, labelKey: "collections", size: 26 }
 ];
 
 type ActivityRailProps = {
@@ -36,14 +72,17 @@ export function ActivityRail({
   onCheckForUpdates,
   onAbout
 }: ActivityRailProps) {
+  const t = useT();
+
   return (
-    <aside className="activity-rail" aria-label="Workbench sections">
+    <aside className="activity-rail" aria-label={t(ACTIVITY_RAIL_MESSAGES.ariaLabel)}>
       <div className="rail-group">
         {PRIMARY_ITEMS.map((item) => (
           <RailButton
             key={item.action}
             isActive={openSidebar === item.action}
             item={item}
+            label={t(RAIL_ITEM_MESSAGES[item.labelKey])}
             onClick={() => onOpenSidebarChange(toggleSidebar(openSidebar, item.action))}
           />
         ))}
@@ -52,7 +91,7 @@ export function ActivityRail({
       <div className="rail-group rail-group-bottom">
         <div className="rail-entry">
           <button
-            aria-label="Open tools menu"
+            aria-label={t(ACTIVITY_RAIL_MESSAGES.openToolsMenu)}
             className={`rail-button ${isToolMenuOpen ? "rail-button-active" : ""}`}
             onClick={() => onToolMenuOpenChange(!isToolMenuOpen)}
             type="button"
@@ -60,18 +99,18 @@ export function ActivityRail({
             <Ellipsis aria-hidden="true" size={22} strokeWidth={1.9} />
           </button>
           <span className="rail-tooltip" role="tooltip">
-            Tools
+            {t(ACTIVITY_RAIL_MESSAGES.tools)}
           </span>
           {isToolMenuOpen ? (
             <div className="rail-menu" role="menu">
               <button className="rail-menu-item" onClick={onSettings} role="menuitem" type="button">
-                Settings
+                {t(ACTIVITY_RAIL_MESSAGES.settings)}
               </button>
               <button className="rail-menu-item" onClick={onCheckForUpdates} role="menuitem" type="button">
-                Check for Updates
+                {t(ACTIVITY_RAIL_MESSAGES.checkForUpdates)}
               </button>
               <button className="rail-menu-item" onClick={onAbout} role="menuitem" type="button">
-                About
+                {t(ACTIVITY_RAIL_MESSAGES.about)}
               </button>
             </div>
           ) : null}
@@ -84,16 +123,17 @@ export function ActivityRail({
 type RailButtonProps = {
   isActive: boolean;
   item: RailItem;
+  label: string;
   onClick: () => void;
 };
 
-function RailButton({ isActive, item, onClick }: RailButtonProps) {
+function RailButton({ isActive, item, label, onClick }: RailButtonProps) {
   const Icon = item.icon;
 
   return (
     <div className="rail-entry">
       <button
-        aria-label={item.label}
+        aria-label={label}
         className={`rail-button ${isActive ? "rail-button-active" : ""}`}
         onClick={onClick}
         type="button"
@@ -101,7 +141,7 @@ function RailButton({ isActive, item, onClick }: RailButtonProps) {
         <Icon aria-hidden="true" size={item.size} strokeWidth={1.9} />
       </button>
       <span className="rail-tooltip" role="tooltip">
-        {item.label}
+        {label}
       </span>
     </div>
   );

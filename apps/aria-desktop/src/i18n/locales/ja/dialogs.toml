@@ -1,0 +1,12 @@
+[dialogs.modal]
+close = "ダイアログを閉じる"
+
+[dialogs.about]
+title = "このアプリについて"
+logo_alt = "Aria Terminal のロゴ"
+author_label = "作者: Zyzsdy"
+product_name = "Aria Terminal"
+desktop_version = "Aria Desktop バージョン: {version}"
+webview_version = "Webview2 バージョン: {version}"
+aria_core_version = "Aria Core バージョン: {version}"
+aria_core_not_connected = "Aria Core に接続されていません"

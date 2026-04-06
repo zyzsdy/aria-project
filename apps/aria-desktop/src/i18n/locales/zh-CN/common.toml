@@ -1,0 +1,10 @@
+[common.actions]
+dismiss = "关闭"
+close = "关闭"
+reset_to_defaults = "重置为默认值"
+
+[common.labels]
+settings = "设置"
+about = "关于"
+tools = "工具"
+check_for_updates = "检查更新"

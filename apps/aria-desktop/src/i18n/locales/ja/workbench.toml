@@ -1,0 +1,25 @@
+[workbench.activity_rail]
+aria_label = "ワークベンチのセクション"
+sessions = "セッション"
+collections = "コレクション"
+open_tools_menu = "ツールメニューを開く"
+
+[workbench.sidebar]
+panel_aria_label = "{panel} パネル"
+refresh_sessions = "セッションを更新"
+create_session = "セッションを作成"
+
+[workbench.sidebar.sessions]
+title = "セッション"
+empty = "セッションはまだありません。"
+
+[workbench.sidebar.collections]
+title = "コレクション"
+
+[workbench.tabs]
+aria_label = "セッションタブ"
+settings_tab = "設定"
+close_tab = "{title} を閉じる"
+
+[workbench.status]
+check_updates_unavailable = "アップデート確認機能はまだ接続されていません。"

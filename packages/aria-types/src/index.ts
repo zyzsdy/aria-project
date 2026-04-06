@@ -36,7 +36,7 @@ export const RIGHT_CLICK_BEHAVIORS = ["paste", "menu"] as const;
 export const BELL_MODES = ["off", "visual", "system"] as const;
 export const STARTUP_BEHAVIORS = ["open_empty", "restore_previous"] as const;
 export const CLOSE_CONFIRMATIONS = ["never", "confirm_running_sessions"] as const;
-export const SETTINGS_GROUPS = ["appearance", "terminal", "workspace"] as const;
+export const SETTINGS_GROUPS = ["appearance", "terminal", "workspace", "localization"] as const;
 
 export type HealthStatus = (typeof HEALTH_STATUSES)[number];
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
@@ -125,10 +125,15 @@ export interface WorkspaceSettings {
   readonly closeConfirmation: CloseConfirmation;
 }
 
+export interface LocalizationSettings {
+  readonly locale: string;
+}
+
 export interface AppSettings {
   readonly appearance: AppearanceSettings;
   readonly terminal: TerminalSettings;
   readonly workspace: WorkspaceSettings;
+  readonly localization: LocalizationSettings;
 }
 
 export interface AppearanceSettingsPatch {
@@ -153,10 +158,15 @@ export interface WorkspaceSettingsPatch {
   readonly closeConfirmation?: CloseConfirmation;
 }
 
+export interface LocalizationSettingsPatch {
+  readonly locale?: string;
+}
+
 export interface UpdateAppSettingsPayload {
   readonly appearance?: AppearanceSettingsPatch;
   readonly terminal?: TerminalSettingsPatch;
   readonly workspace?: WorkspaceSettingsPatch;
+  readonly localization?: LocalizationSettingsPatch;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -178,6 +188,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   workspace: {
     startupBehavior: "restore_previous",
     closeConfirmation: "confirm_running_sessions"
+  },
+  localization: {
+    locale: "system"
   }
 };
 
@@ -277,3 +290,5 @@ export type SessionStreamFrame =
   | TerminalBytesFrame
   | SessionMetadataFrame
   | ViewerDetachedFrame;
+
+

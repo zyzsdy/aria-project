@@ -1,0 +1,25 @@
+[workbench.activity_rail]
+aria_label = "Workbench sections"
+collections = "Collections"
+open_tools_menu = "Open tools menu"
+sessions = "Sessions"
+
+[workbench.sidebar]
+create_session = "Create session"
+panel_aria_label = "{panel} panel"
+refresh_sessions = "Refresh sessions"
+
+[workbench.sidebar.collections]
+title = "Collections"
+
+[workbench.sidebar.sessions]
+empty = "No sessions yet."
+title = "Sessions"
+
+[workbench.status]
+check_updates_unavailable = "Check for Updates is not wired up yet."
+
+[workbench.tabs]
+aria_label = "Session tabs"
+close_tab = "Close {title}"
+settings_tab = "Settings"
