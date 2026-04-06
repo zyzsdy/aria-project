@@ -205,7 +205,7 @@ async function syncEnglishCatalog(namespaceEntries, checkMode) {
     const nextDocument = stringifyCatalog(messages);
     const currentDocument = await readOptionalFile(filePath);
 
-    if (currentDocument === nextDocument) {
+    if (normalizeLineEndings(currentDocument) === normalizeLineEndings(nextDocument)) {
       continue;
     }
 
@@ -312,4 +312,8 @@ async function readOptionalFile(filePath) {
     }
     throw error;
   }
+}
+
+function normalizeLineEndings(document) {
+  return document?.replace(/\r\n/g, "\n");
 }
