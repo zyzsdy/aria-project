@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Aria Desktop",
+        "title": "Aria Terminal",
         "width": 1400,
         "height": 900,
         "minWidth": 960,

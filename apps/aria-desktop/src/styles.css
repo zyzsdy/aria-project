@@ -789,21 +789,130 @@ input[type="range"] {
   min-height: 38px;
 }
 
+.dialog-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.dialog-modal-title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.dialog-modal-body {
+  padding-top: 12px;
+}
+
+.dialog-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.dialog-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.dialog-icon-button:hover,
+.dialog-icon-button:focus-visible {
+  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .dialog-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
   display: grid;
   place-items: center;
-  background: rgba(2, 5, 8, 0.52);
+  padding: 24px;
+  background: rgba(2, 5, 8, 0.58);
 }
 
 .dialog-surface {
-  width: min(520px, calc(100vw - 48px));
-  padding: 24px;
+  width: min(640px, calc(100vw - 48px));
+  padding: 12px 15px;
   border: 1px solid var(--border-strong);
-  background: #0d1219;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 24%),
+    #0d1219;
   box-shadow: 0 24px 50px rgba(0, 0, 0, 0.4);
+}
+
+.dialog-modal-footer .settings-reset-button {
+  min-height: 32px;
+  border-radius: 8px;
+}
+
+.about-dialog-layout {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+}
+
+.about-dialog-logo-shell {
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 72%);
+}
+
+.about-dialog-logo {
+  display: block;
+  width: min(100%, 128px);
+  height: auto;
+}
+
+.about-dialog-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.about-dialog-product-name {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.about-dialog-version-line {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.about-dialog-footer-meta {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+.about-dialog-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.about-dialog-link:hover {
+  text-decoration: underline;
 }
 
 .status-toast {

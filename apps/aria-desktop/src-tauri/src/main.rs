@@ -11,6 +11,7 @@ use aria_ipc::{
     UpdateAppSettingsPayload, UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, SessionId, TerminalSize, ViewerId};
+use serde::Serialize;
 use std::{
     path::{Path, PathBuf},
     process::Command,
@@ -33,6 +34,12 @@ struct DesktopState {
 struct DaemonController {
     client: DaemonClient,
     daemon_bin: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AboutRuntimeInfo {
+    webview_version: Option<String>,
 }
 
 #[tauri::command]
@@ -271,6 +278,22 @@ async fn reset_app_settings_group(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn get_about_runtime_info() -> AboutRuntimeInfo {
+    AboutRuntimeInfo {
+        webview_version: tauri::webview_version().ok(),
+    }
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("unsupported external url".to_string());
+    }
+
+    open_external_url_with_system(&url).map_err(|error| error.to_string())
+}
+
 fn main() -> Result<()> {
     let app_info = AppInfo::new(
         "Aria Desktop",
@@ -314,7 +337,9 @@ fn main() -> Result<()> {
             viewer_ack,
             get_app_settings,
             update_app_settings,
-            reset_app_settings_group
+            reset_app_settings_group,
+            get_about_runtime_info,
+            open_external_url
         ])
         .run(tauri::generate_context!())?;
 
@@ -475,4 +500,36 @@ where
         .payload
         .ok_or_else(|| anyhow!("daemon returned an empty payload"))?;
     Ok(serde_json::from_value(payload)?)
+}
+
+fn open_external_url_with_system(url: &str) -> Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(url)
+            .spawn()
+            .with_context(|| format!("open {url}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(url)
+            .spawn()
+            .with_context(|| format!("open {url}"))?;
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .with_context(|| format!("open {url}"))?;
+        return Ok(());
+    }
+
+    #[allow(unreachable_code)]
+    Err(anyhow!("unsupported platform"))
 }
