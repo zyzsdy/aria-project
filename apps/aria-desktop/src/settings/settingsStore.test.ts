@@ -4,8 +4,10 @@ import type {
   SettingsGroup,
   UpdateAppSettingsPayload
 } from "@aria/types";
-import { DEFAULT_APP_SETTINGS } from "@aria/types";
+import { createPlatformDefaultSettings } from "./appSettings";
 import { createSettingsStore, type SettingsApi } from "./settingsStore";
+
+const DEFAULT_APP_SETTINGS = createPlatformDefaultSettings("windows");
 
 describe("createSettingsStore", () => {
   it("loads default settings from the daemon when initialized", async () => {
@@ -80,6 +82,43 @@ describe("createSettingsStore", () => {
 
     expect(store.getSnapshot().localization).toEqual(DEFAULT_APP_SETTINGS.localization);
   });
+
+  it("updates and resets profiles independently", async () => {
+    const store = createSettingsStore(createFakeApi());
+    await store.load();
+
+    await store.update({
+      profiles: {
+        defaultProfileId: "custom:fish",
+        items: [
+          ...store.getSnapshot().profiles.items,
+          {
+            id: "custom:fish",
+            source: "custom",
+            name: "Fish",
+            executable: "fish",
+            args: ["--login"],
+            startupDir: "D:/shells"
+          }
+        ]
+      }
+    });
+
+    expect(store.getSnapshot().profiles.defaultProfileId).toBe("custom:fish");
+    expect(store.getSnapshot().profiles.items).toContainEqual({
+      id: "custom:fish",
+      source: "custom",
+      name: "Fish",
+      executable: "fish",
+      args: ["--login"],
+      startupDir: "D:/shells"
+    });
+
+    await store.resetGroup("profiles");
+
+    expect(store.getSnapshot().profiles).toEqual(DEFAULT_APP_SETTINGS.profiles);
+    expect(store.getSnapshot().appearance).toEqual(DEFAULT_APP_SETTINGS.appearance);
+  });
 });
 
 function createFakeApi(): SettingsApi {
@@ -121,6 +160,16 @@ function mergeSettings(
     localization: {
       ...current.localization,
       ...payload.localization
+    },
+    profiles: {
+      ...current.profiles,
+      ...payload.profiles,
+      items: payload.profiles?.items
+        ? payload.profiles.items.map((profile) => ({
+            ...profile,
+            args: [...profile.args]
+          }))
+        : current.profiles.items
     }
   };
 }

@@ -72,6 +72,7 @@ async fn create_local_session(
     state: State<'_, DesktopState>,
     cols: Option<u16>,
     rows: Option<u16>,
+    profile_id: Option<String>,
 ) -> Result<CreateLocalSessionResponse, String> {
     state
         .daemon
@@ -85,6 +86,7 @@ async fn create_local_session(
             size: TerminalSize::new(cols.unwrap_or(80), rows.unwrap_or(24)),
             cwd: None,
             command: None,
+            profile_id,
         })
         .await
         .map_err(|error| error.to_string())

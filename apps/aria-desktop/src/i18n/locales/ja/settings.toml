@@ -26,7 +26,14 @@ description = "言語とロケールの設定。"
 heading = "言語"
 copy = "デスクトップシェルで使用する言語を選択します。"
 
+[settings.sections.profiles]
+label = "Profiles"
+description = "Shell 起動の既定値とカスタム設定。"
+heading = "Profiles"
+copy = "組み込み shell の管理、カスタム起動プロファイルの追加、新しい session に使う既定プロファイルの選択を行います。"
+
 [settings.fields]
+arguments = "引数"
 font_family = "フォント"
 font_size = "フォントサイズ"
 line_height = "行の高さ"
@@ -40,6 +47,18 @@ copy_on_select = "選択時にコピー"
 startup_behavior = "起動時の動作"
 close_confirmation = "終了確認"
 language = "言語"
+default_profile = "既定のプロファイル"
+profile_name = "プロファイル名"
+executable = "実行ファイル"
+startup_directory = "開始ディレクトリ"
+
+[settings.actions]
+add_profile = "プロファイルを追加"
+delete_profile = "{name} を削除"
+
+[settings.labels]
+builtin_profile = "組み込み"
+custom_profile = "カスタム"
 
 [settings.themes.north]
 label = "ノース"

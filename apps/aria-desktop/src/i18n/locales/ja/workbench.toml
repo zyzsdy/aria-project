@@ -8,6 +8,8 @@ open_tools_menu = "ツールメニューを開く"
 panel_aria_label = "{panel} パネル"
 refresh_sessions = "セッションを更新"
 create_session = "セッションを作成"
+open_shell_profiles = "shell プロファイルメニューを開く"
+default_profile_badge = "既定"
 
 [workbench.sidebar.sessions]
 title = "セッション"

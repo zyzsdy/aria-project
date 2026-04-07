@@ -15,6 +15,9 @@ use tokio::{
 
 pub const DEFAULT_DAEMON_ADDR: &str = "127.0.0.1:45783";
 const DEFAULT_RPC_TIMEOUT_MS: u64 = 2_500;
+pub const BUILTIN_POWERSHELL_PROFILE_ID: &str = "builtin:powershell";
+pub const BUILTIN_CMD_PROFILE_ID: &str = "builtin:cmd";
+pub const BUILTIN_SYSTEM_PROFILE_ID: &str = "builtin:system";
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +50,8 @@ pub struct CreateLocalSessionRequest {
     pub size: TerminalSize,
     pub cwd: Option<String>,
     pub command: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -188,6 +193,14 @@ pub enum CloseConfirmation {
     ConfirmRunningSessions,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileSource {
+    #[default]
+    Builtin,
+    Custom,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SettingsGroup {
@@ -195,6 +208,7 @@ pub enum SettingsGroup {
     Terminal,
     Workspace,
     Localization,
+    Profiles,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -277,7 +291,49 @@ impl Default for LocalizationSettings {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellProfile {
+    pub id: String,
+    pub source: ProfileSource,
+    pub name: String,
+    pub executable: String,
+    pub args: Vec<String>,
+    pub startup_dir: Option<String>,
+}
+
+impl Default for ShellProfile {
+    fn default() -> Self {
+        Self {
+            id: BUILTIN_SYSTEM_PROFILE_ID.to_string(),
+            source: ProfileSource::Builtin,
+            name: "Default Shell".to_string(),
+            executable: default_system_shell_executable(),
+            args: Vec::new(),
+            startup_dir: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfilesSettings {
+    pub default_profile_id: String,
+    pub items: Vec<ShellProfile>,
+}
+
+impl Default for ProfilesSettings {
+    fn default() -> Self {
+        Self {
+            default_profile_id: platform_default_profile_id().to_string(),
+            items: platform_builtin_profiles(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -285,6 +341,19 @@ pub struct AppSettings {
     pub terminal: TerminalSettings,
     pub workspace: WorkspaceSettings,
     pub localization: LocalizationSettings,
+    pub profiles: ProfilesSettings,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            appearance: AppearanceSettings::default(),
+            terminal: TerminalSettings::default(),
+            workspace: WorkspaceSettings::default(),
+            localization: LocalizationSettings::default(),
+            profiles: ProfilesSettings::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -337,6 +406,15 @@ pub struct LocalizationSettingsPatch {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProfilesSettingsPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_profile_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<ShellProfile>>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateAppSettingsPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<AppearanceSettingsPatch>,
@@ -346,6 +424,8 @@ pub struct UpdateAppSettingsPayload {
     pub workspace: Option<WorkspaceSettingsPatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub localization: Option<LocalizationSettingsPatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profiles: Option<ProfilesSettingsPatch>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -362,6 +442,50 @@ pub struct UpdateSettingsRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ResetSettingsGroupRequest {
     pub group: SettingsGroup,
+}
+
+pub fn platform_default_profile_id() -> &'static str {
+    if cfg!(target_os = "windows") {
+        BUILTIN_POWERSHELL_PROFILE_ID
+    } else {
+        BUILTIN_SYSTEM_PROFILE_ID
+    }
+}
+
+pub fn platform_builtin_profiles() -> Vec<ShellProfile> {
+    if cfg!(target_os = "windows") {
+        vec![
+            ShellProfile {
+                id: BUILTIN_POWERSHELL_PROFILE_ID.to_string(),
+                source: ProfileSource::Builtin,
+                name: "PowerShell".to_string(),
+                executable: "powershell.exe".to_string(),
+                args: Vec::new(),
+                startup_dir: None,
+            },
+            ShellProfile {
+                id: BUILTIN_CMD_PROFILE_ID.to_string(),
+                source: ProfileSource::Builtin,
+                name: "Command Prompt".to_string(),
+                executable: std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string()),
+                args: Vec::new(),
+                startup_dir: None,
+            },
+        ]
+    } else {
+        vec![ShellProfile {
+            id: BUILTIN_SYSTEM_PROFILE_ID.to_string(),
+            source: ProfileSource::Builtin,
+            name: "Default Shell".to_string(),
+            executable: default_system_shell_executable(),
+            args: Vec::new(),
+            startup_dir: None,
+        }]
+    }
+}
+
+fn default_system_shell_executable() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -879,13 +1003,13 @@ impl DaemonClient {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppSettings, AttachViewerRequest, BufferKind, CloseConfirmation, DaemonInfo,
-        HealthRequest, HealthResponse, PayloadEncoding, ReadScrollbackResponse, ReplayMode,
-        RehydrateReason, ResetSettingsGroupRequest, RightClickBehavior, RpcRequest, RpcResponse,
-        ScrollbackLine, ScrollbackStats, SessionMetadata, SessionMetadataDelta, SessionSnapshot,
-        SessionStreamFrame, SessionStreamMetadata, SessionSummary, SettingsGroup,
-        StartupBehavior, ThemePreset, UpdateAppSettingsPayload, UpdateSettingsRequest,
-        ViewerRole,
+        AppSettings, AttachViewerRequest, BufferKind, CloseConfirmation,
+        CreateLocalSessionRequest, DaemonInfo, HealthRequest, HealthResponse, PayloadEncoding,
+        ReadScrollbackResponse, ReplayMode, RehydrateReason, ResetSettingsGroupRequest,
+        RightClickBehavior, RpcRequest, RpcResponse, ScrollbackLine, ScrollbackStats,
+        SessionMetadata, SessionMetadataDelta, SessionSnapshot, SessionStreamFrame,
+        SessionStreamMetadata, SessionSummary, SettingsGroup, StartupBehavior, ThemePreset,
+        UpdateAppSettingsPayload, UpdateSettingsRequest, ViewerRole,
     };
     use aria_model::{
         AppInfo, CursorPosition, HealthStatus, SessionId, SessionStatus, SessionTransportKind,
@@ -1141,6 +1265,7 @@ mod tests {
         let settings = AppSettings::default();
         let json = serde_json::to_string(&settings).expect("serialize app settings");
         let decoded: AppSettings = serde_json::from_str(&json).expect("deserialize app settings");
+        let value = serde_json::to_value(&settings).expect("serialize settings value");
 
         assert_eq!(decoded.appearance.theme_preset, ThemePreset::North);
         assert_eq!(decoded.terminal.right_click_behavior, RightClickBehavior::Paste);
@@ -1150,6 +1275,19 @@ mod tests {
         );
         assert_eq!(decoded.workspace.startup_behavior, StartupBehavior::RestorePrevious);
         assert_eq!(decoded.localization.locale, "system");
+        assert!(value.get("profiles").is_some());
+        let profiles = value
+            .get("profiles")
+            .and_then(|profiles| profiles.get("items"))
+            .and_then(|items| items.as_array())
+            .expect("profiles.items array");
+        assert!(!profiles.is_empty());
+        assert!(
+            value.get("profiles")
+                .and_then(|profiles| profiles.get("defaultProfileId"))
+                .and_then(|profile| profile.as_str())
+                .is_some()
+        );
     }
 
     #[test]
@@ -1166,6 +1304,10 @@ mod tests {
             group: SettingsGroup::Localization,
         })
         .expect("serialize localization reset settings request");
+        let profile = serde_json::to_value(serde_json::json!({
+            "group": "profiles"
+        }))
+        .expect("serialize profile reset settings request");
 
         assert!(update.get("settings").is_some());
         assert_eq!(
@@ -1175,6 +1317,34 @@ mod tests {
         assert_eq!(
             localization.get("group").and_then(|value| value.as_str()),
             Some("localization")
+        );
+        assert_eq!(
+            profile.get("group").and_then(|value| value.as_str()),
+            Some("profiles")
+        );
+    }
+
+    #[test]
+    fn create_local_session_request_round_trips_profile_id() {
+        let request = serde_json::json!({
+            "size": {
+                "cols": 120,
+                "rows": 32,
+                "pixelWidth": 0,
+                "pixelHeight": 0
+            },
+            "cwd": "C:/Users/tester",
+            "command": ["pwsh.exe", "-NoLogo"],
+            "profileId": "builtin:powershell"
+        });
+
+        let decoded: CreateLocalSessionRequest =
+            serde_json::from_value(request).expect("deserialize create session request");
+        let encoded = serde_json::to_value(decoded).expect("serialize create session request");
+
+        assert_eq!(
+            encoded.get("profileId").and_then(|value| value.as_str()),
+            Some("builtin:powershell")
         );
     }
 }

@@ -6,6 +6,8 @@ sessions = "Sessions"
 
 [workbench.sidebar]
 create_session = "Create session"
+default_profile_badge = "Default"
+open_shell_profiles = "Open shell profiles"
 panel_aria_label = "{panel} panel"
 refresh_sessions = "Refresh sessions"
 

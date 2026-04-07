@@ -1,18 +1,25 @@
-import type { AppSettings, ThemePreset } from "@aria/types";
-import { DEFAULT_APP_SETTINGS } from "@aria/types";
+import type { AppSettings, ShellProfile, ThemePreset } from "@aria/types";
+import {
+  BUILTIN_CMD_PROFILE_ID,
+  BUILTIN_POWERSHELL_PROFILE_ID,
+  BUILTIN_SYSTEM_PROFILE_ID,
+  DEFAULT_APP_SETTINGS as DEFAULT_SHARED_APP_SETTINGS
+} from "@aria/types";
 import type { ITheme, Terminal } from "@xterm/xterm";
-
-export { DEFAULT_APP_SETTINGS };
 
 export type ThemeOption = {
   id: ThemePreset;
 };
+
+export type DesktopPlatform = "windows" | "macos" | "linux";
 
 export const THEME_OPTIONS: ThemeOption[] = [
   { id: "north" },
   { id: "oxide" },
   { id: "forest" }
 ];
+
+export const DEFAULT_APP_SETTINGS = createPlatformDefaultSettings();
 
 const TERMINAL_THEMES: Record<ThemePreset, ITheme> = {
   north: {
@@ -108,10 +115,94 @@ export function cloneSettings(settings: AppSettings) {
     appearance: { ...settings.appearance },
     terminal: { ...settings.terminal },
     workspace: { ...settings.workspace },
-    localization: { ...settings.localization }
+    localization: { ...settings.localization },
+    profiles: {
+      defaultProfileId: settings.profiles.defaultProfileId,
+      items: settings.profiles.items.map((profile) => ({
+        ...profile,
+        args: [...profile.args]
+      }))
+    }
   } satisfies AppSettings;
 }
 
 export function createDefaultSettings() {
   return cloneSettings(DEFAULT_APP_SETTINGS);
+}
+
+export function createPlatformDefaultSettings(platform: DesktopPlatform = detectDesktopPlatform()) {
+  return {
+    ...DEFAULT_SHARED_APP_SETTINGS,
+    appearance: { ...DEFAULT_SHARED_APP_SETTINGS.appearance },
+    terminal: { ...DEFAULT_SHARED_APP_SETTINGS.terminal },
+    workspace: { ...DEFAULT_SHARED_APP_SETTINGS.workspace },
+    localization: { ...DEFAULT_SHARED_APP_SETTINGS.localization },
+    profiles: createProfilesSettings(platform)
+  } satisfies AppSettings;
+}
+
+export function detectDesktopPlatform(): DesktopPlatform {
+  if (typeof navigator === "undefined") {
+    return "windows";
+  }
+
+  const candidate =
+    (
+      navigator as Navigator & {
+        userAgentData?: {
+          platform?: string;
+        };
+      }
+    ).userAgentData?.platform ??
+    navigator.platform ??
+    navigator.userAgent ??
+    "";
+  const normalized = candidate.toLowerCase();
+
+  if (normalized.includes("mac")) {
+    return "macos";
+  }
+  if (normalized.includes("linux")) {
+    return "linux";
+  }
+
+  return "windows";
+}
+
+function createProfilesSettings(platform: DesktopPlatform): AppSettings["profiles"] {
+  if (platform === "windows") {
+    return {
+      defaultProfileId: BUILTIN_POWERSHELL_PROFILE_ID,
+      items: [
+        createBuiltinProfile(
+          BUILTIN_POWERSHELL_PROFILE_ID,
+          "PowerShell",
+          "powershell.exe",
+          []
+        ),
+        createBuiltinProfile(BUILTIN_CMD_PROFILE_ID, "Command Prompt", "cmd.exe", [])
+      ]
+    };
+  }
+
+  return {
+    defaultProfileId: BUILTIN_SYSTEM_PROFILE_ID,
+    items: [createBuiltinProfile(BUILTIN_SYSTEM_PROFILE_ID, "Default Shell", "/bin/sh", [])]
+  };
+}
+
+function createBuiltinProfile(
+  id: string,
+  name: string,
+  executable: string,
+  args: string[]
+): ShellProfile {
+  return {
+    id,
+    source: "builtin",
+    name,
+    executable,
+    args,
+    startupDir: null
+  };
 }

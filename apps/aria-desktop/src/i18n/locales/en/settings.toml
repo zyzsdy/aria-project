@@ -1,17 +1,30 @@
 [settings.fields]
+arguments = "Arguments"
 bell_mode = "Bell mode"
 close_confirmation = "Close confirmation"
 copy_on_select = "Copy on select"
 cursor_blinks = "Cursor blinks"
 cursor_style = "Cursor style"
+default_profile = "Default profile"
+executable = "Executable"
 font_family = "Font family"
 font_size = "Font size"
 language = "Language"
 letter_spacing = "Letter spacing"
 line_height = "Line height"
+profile_name = "Profile name"
 right_click = "Right click"
 scrollback_lines = "Scrollback lines"
+startup_directory = "Startup directory"
 startup_behavior = "Startup behavior"
+
+[settings.actions]
+add_profile = "Add profile"
+delete_profile = "Delete {name}"
+
+[settings.labels]
+builtin_profile = "Built-in"
+custom_profile = "Custom"
 
 [settings.options.bell_mode]
 off = "Off"
@@ -56,6 +69,12 @@ copy = "Choose the language used by the desktop shell."
 description = "Language and locale preferences."
 heading = "Localization"
 label = "Localization"
+
+[settings.sections.profiles]
+copy = "Manage built-in shells, add custom launch profiles, and choose the default for new sessions."
+description = "Shell launch defaults and custom profiles."
+heading = "Profiles"
+label = "Profiles"
 
 [settings.sections.terminal]
 copy = "Set terminal interaction defaults and history limits."

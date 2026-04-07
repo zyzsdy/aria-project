@@ -26,7 +26,14 @@ description = "语言和区域偏好。"
 heading = "语言"
 copy = "选择桌面壳层使用的语言。"
 
+[settings.sections.profiles]
+label = "配置"
+description = "Shell 启动默认值和自定义配置。"
+heading = "配置"
+copy = "管理内置 shell，添加自定义启动配置，并选择新建 session 使用的默认配置。"
+
 [settings.fields]
+arguments = "参数"
 font_family = "字体"
 font_size = "字号"
 line_height = "行高"
@@ -40,6 +47,18 @@ copy_on_select = "选择时复制"
 startup_behavior = "启动行为"
 close_confirmation = "关闭确认"
 language = "语言"
+default_profile = "默认配置"
+profile_name = "配置名称"
+executable = "可执行文件"
+startup_directory = "启动目录"
+
+[settings.actions]
+add_profile = "添加配置"
+delete_profile = "删除 {name}"
+
+[settings.labels]
+builtin_profile = "内置"
+custom_profile = "自定义"
 
 [settings.themes.north]
 label = "北境"

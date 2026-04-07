@@ -8,6 +8,7 @@ import {
   type UpdateAppSettingsPayload
 } from "@aria/types";
 import { startTransition, useEffect, useRef, useState } from "react";
+import { ModalDialog } from "./components/ModalDialog";
 import { AboutDialog } from "./components/workbench/AboutDialog";
 import { ActivityRail } from "./components/workbench/ActivityRail";
 import { WorkbenchMain } from "./components/workbench/main/WorkbenchMain";
@@ -40,6 +41,23 @@ const APP_MESSAGES = defineMessages({
   dismiss: {
     key: "common.actions.dismiss",
     defaultMessage: "Dismiss"
+  },
+  close: {
+    key: "common.actions.close",
+    defaultMessage: "Close"
+  },
+  sessionLaunchErrorTitle: {
+    key: "dialogs.session_launch_error.title",
+    defaultMessage: "Unable to create session"
+  },
+  sessionLaunchErrorCopy: {
+    key: "dialogs.session_launch_error.copy",
+    defaultMessage:
+      "Aria could not start the selected shell profile. Review the command, arguments, or startup directory and try again."
+  },
+  sessionLaunchErrorDetailsLabel: {
+    key: "dialogs.session_launch_error.details_label",
+    defaultMessage: "Error details"
   }
 });
 
@@ -55,8 +73,10 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [openSidebar, setOpenSidebar] = useState<SidebarPanel | null>("sessions");
   const [isToolMenuOpen, setIsToolMenuOpen] = useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
   const [toolNotice, setToolNotice] = useState<ToolNotice>(null);
+  const [sessionLaunchError, setSessionLaunchError] = useState<string | null>(null);
 
   const selectedTabIdRef = useRef<string | null>(null);
   const tabsRef = useRef<WorkbenchTab[]>([]);
@@ -84,6 +104,12 @@ export function App() {
   useEffect(() => {
     selectedTabIdRef.current = selectedTabId;
   }, [selectedTabId]);
+
+  useEffect(() => {
+    if (openSidebar !== "sessions") {
+      setIsProfileMenuOpen(false);
+    }
+  }, [openSidebar]);
 
   useEffect(() => {
     const settingsStore = settingsStoreRef.current;
@@ -188,16 +214,20 @@ export function App() {
     applyTabState(closeWorkbenchTab(tabsRef.current, selectedTabIdRef.current, tabId));
   }
 
-  async function handleCreateSession() {
+  async function handleCreateSession(profileId?: string) {
     setBusy(true);
+    setIsProfileMenuOpen(false);
+    setSessionLaunchError(null);
 
     try {
       const created = await invoke<{ sessionId: string }>("create_local_session", {
         cols: 120,
-        rows: 32
+        rows: 32,
+        profileId
       });
       await refreshWorkbench({ ensureTab: createTerminalTab(created.sessionId) });
     } catch (error) {
+      setSessionLaunchError(describeDesktopError(error));
       logDesktopError(error);
     } finally {
       setBusy(false);
@@ -242,10 +272,12 @@ export function App() {
         onCloseAboutDialog={() => setIsAboutDialogOpen(false)}
         onCloseToolNotice={() => setToolNotice(null)}
         onCloseTab={handleCloseTab}
-        onCreateSession={() => void handleCreateSession()}
+        onCreateSession={() => void handleCreateSession(settings.profiles.defaultProfileId)}
+        onCreateSessionWithProfile={(profileId) => void handleCreateSession(profileId)}
         onOpenAbout={() => setIsAboutDialogOpen(true)}
         onOpenSettingsTab={handleOpenSettingsTab}
         onOpenSidebarChange={setOpenSidebar}
+        onProfileMenuOpenChange={setIsProfileMenuOpen}
         onRefresh={() => void refreshWorkbench()}
         onResetSettingsGroup={handleResetSettingsGroup}
         onSelectSession={handleSelectSession}
@@ -255,11 +287,16 @@ export function App() {
         onStreamError={logDesktopError}
         onStreamMetadata={handleStreamMetadata}
         onStreamMetadataDelta={handleStreamMetadataDelta}
+        defaultProfileId={settings.profiles.defaultProfileId}
+        isProfileMenuOpen={isProfileMenuOpen}
+        onCloseSessionLaunchError={() => setSessionLaunchError(null)}
         onToolMenuOpenChange={setIsToolMenuOpen}
         onUpdateSettings={(next) => void handleUpdateSettings(next)}
         openSidebar={openSidebar}
+        profiles={settings.profiles.items}
         selectedSessionId={selectedSessionId}
         selectedSettingsGroup={selectedSettingsGroup}
+        sessionLaunchError={sessionLaunchError}
         sessions={sessions}
         settings={settings}
         tabs={tabs}
@@ -288,16 +325,21 @@ export function App() {
 type AppShellProps = {
   activeTab: WorkbenchTab | null;
   busy: boolean;
+  defaultProfileId: string;
   isAboutDialogOpen: boolean;
+  isProfileMenuOpen: boolean;
   isToolMenuOpen: boolean;
   onCheckForUpdates: () => void;
   onCloseAboutDialog: () => void;
+  onCloseSessionLaunchError: () => void;
   onCloseToolNotice: () => void;
   onCloseTab: (tabId: string) => void;
   onCreateSession: () => void;
+  onCreateSessionWithProfile: (profileId: string) => void;
   onOpenAbout: () => void;
   onOpenSettingsTab: (title: string) => void;
   onOpenSidebarChange: (next: SidebarPanel | null) => void;
+  onProfileMenuOpenChange: (next: boolean) => void;
   onRefresh: () => void;
   onResetSettingsGroup: (group: SettingsGroup) => void;
   onSelectSession: (sessionId: string) => void;
@@ -310,8 +352,10 @@ type AppShellProps = {
   onToolMenuOpenChange: (next: boolean) => void;
   onUpdateSettings: (next: Partial<AppSettings>) => void;
   openSidebar: SidebarPanel | null;
+  profiles: AppSettings["profiles"]["items"];
   selectedSessionId: string | null;
   selectedSettingsGroup: SettingsGroup;
+  sessionLaunchError: string | null;
   sessions: SessionSummary[];
   settings: AppSettings;
   tabs: WorkbenchTab[];
@@ -321,16 +365,21 @@ type AppShellProps = {
 function AppShell({
   activeTab,
   busy,
+  defaultProfileId,
   isAboutDialogOpen,
+  isProfileMenuOpen,
   isToolMenuOpen,
   onCheckForUpdates,
   onCloseAboutDialog,
+  onCloseSessionLaunchError,
   onCloseToolNotice,
   onCloseTab,
   onCreateSession,
+  onCreateSessionWithProfile,
   onOpenAbout,
   onOpenSettingsTab,
   onOpenSidebarChange,
+  onProfileMenuOpenChange,
   onRefresh,
   onResetSettingsGroup,
   onSelectSession,
@@ -343,8 +392,10 @@ function AppShell({
   onToolMenuOpenChange,
   onUpdateSettings,
   openSidebar,
+  profiles,
   selectedSessionId,
   selectedSettingsGroup,
+  sessionLaunchError,
   sessions,
   settings,
   tabs,
@@ -386,10 +437,15 @@ function AppShell({
         {openSidebar ? (
           <SidebarHost
             busy={busy}
+            defaultProfileId={defaultProfileId}
             onCreateSession={onCreateSession}
+            onCreateSessionWithProfile={onCreateSessionWithProfile}
+            onProfileMenuOpenChange={onProfileMenuOpenChange}
             onRefresh={onRefresh}
             onSelectSession={onSelectSession}
+            openProfileMenu={isProfileMenuOpen}
             openSidebar={openSidebar}
+            profiles={profiles}
             selectedSessionId={selectedSessionId}
             sessions={sessions}
           />
@@ -424,6 +480,22 @@ function AppShell({
       ) : null}
 
       <AboutDialog isOpen={isAboutDialogOpen} onClose={onCloseAboutDialog} />
+      <ModalDialog
+        footer={
+          <button className="settings-reset-button" onClick={onCloseSessionLaunchError} type="button">
+            {t(APP_MESSAGES.close)}
+          </button>
+        }
+        isOpen={sessionLaunchError !== null}
+        onClose={onCloseSessionLaunchError}
+        title={t(APP_MESSAGES.sessionLaunchErrorTitle)}
+      >
+        <div className="dialog-error-layout">
+          <p className="dialog-error-copy">{t(APP_MESSAGES.sessionLaunchErrorCopy)}</p>
+          <p className="dialog-error-label">{t(APP_MESSAGES.sessionLaunchErrorDetailsLabel)}</p>
+          <pre className="dialog-error-details">{sessionLaunchError ?? ""}</pre>
+        </div>
+      </ModalDialog>
     </>
   );
 }
@@ -479,4 +551,36 @@ function patchSessionDelta(
 
 function logDesktopError(error: unknown) {
   console.error(error);
+}
+
+function describeDesktopError(error: unknown) {
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const record = error as Record<string, unknown>;
+
+    for (const key of ["message", "error", "cause"]) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) {
+        return value;
+      }
+    }
+
+    try {
+      const encoded = JSON.stringify(error);
+      if (encoded && encoded !== "{}") {
+        return encoded;
+      }
+    } catch (_jsonError) {
+      // Fall through to the generic message below.
+    }
+  }
+
+  return "Unknown error";
 }

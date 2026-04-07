@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import type {
   AppSettings,
   BellMode,
   CloseConfirmation,
   CursorStyle,
+  ShellProfile,
   RightClickBehavior,
   SettingsGroup,
   StartupBehavior
@@ -105,6 +106,22 @@ const SETTINGS_PAGE_MESSAGES = defineMessages({
     key: "settings.sections.localization.copy",
     defaultMessage: "Choose the language used by the desktop shell."
   },
+  sectionProfilesLabel: {
+    key: "settings.sections.profiles.label",
+    defaultMessage: "Profiles"
+  },
+  sectionProfilesDescription: {
+    key: "settings.sections.profiles.description",
+    defaultMessage: "Shell launch defaults and custom profiles."
+  },
+  sectionProfilesHeading: {
+    key: "settings.sections.profiles.heading",
+    defaultMessage: "Profiles"
+  },
+  sectionProfilesCopy: {
+    key: "settings.sections.profiles.copy",
+    defaultMessage: "Manage built-in shells, add custom launch profiles, and choose the default for new sessions."
+  },
   fieldFontFamily: {
     key: "settings.fields.font_family",
     defaultMessage: "Font family"
@@ -156,6 +173,26 @@ const SETTINGS_PAGE_MESSAGES = defineMessages({
   fieldLanguage: {
     key: "settings.fields.language",
     defaultMessage: "Language"
+  },
+  fieldDefaultProfile: {
+    key: "settings.fields.default_profile",
+    defaultMessage: "Default profile"
+  },
+  fieldProfileName: {
+    key: "settings.fields.profile_name",
+    defaultMessage: "Profile name"
+  },
+  fieldExecutable: {
+    key: "settings.fields.executable",
+    defaultMessage: "Executable"
+  },
+  fieldArguments: {
+    key: "settings.fields.arguments",
+    defaultMessage: "Arguments"
+  },
+  fieldStartupDirectory: {
+    key: "settings.fields.startup_directory",
+    defaultMessage: "Startup directory"
   },
   themeNorthLabel: {
     key: "settings.themes.north.label",
@@ -245,6 +282,22 @@ const SETTINGS_PAGE_MESSAGES = defineMessages({
     key: "settings.options.locale.ja",
     defaultMessage: "Japanese"
   },
+  addProfile: {
+    key: "settings.actions.add_profile",
+    defaultMessage: "Add profile"
+  },
+  deleteProfile: {
+    key: "settings.actions.delete_profile",
+    defaultMessage: "Delete {name}"
+  },
+  builtinProfile: {
+    key: "settings.labels.builtin_profile",
+    defaultMessage: "Built-in"
+  },
+  customProfile: {
+    key: "settings.labels.custom_profile",
+    defaultMessage: "Custom"
+  },
   resetToDefaults: {
     key: "common.actions.reset_to_defaults",
     defaultMessage: "Reset to defaults"
@@ -280,6 +333,11 @@ export function SettingsPage({
       id: "localization" as const,
       label: t(SETTINGS_PAGE_MESSAGES.sectionLocalizationLabel),
       description: t(SETTINGS_PAGE_MESSAGES.sectionLocalizationDescription)
+    },
+    {
+      id: "profiles" as const,
+      label: t(SETTINGS_PAGE_MESSAGES.sectionProfilesLabel),
+      description: t(SETTINGS_PAGE_MESSAGES.sectionProfilesDescription)
     }
   ];
   const themeCopy = {
@@ -325,6 +383,10 @@ export function SettingsPage({
       label: getLocaleLabel(locale, t)
     }))
   ];
+  const profileOptions = settings.profiles.items.map((profile) => ({
+    value: profile.id,
+    label: profile.name
+  }));
 
   return (
     <section className="settings-page">
@@ -577,6 +639,128 @@ export function SettingsPage({
           </SettingsSection>
         ) : null}
 
+        {selectedGroup === "profiles" ? (
+          <SettingsSection
+            description={t(SETTINGS_PAGE_MESSAGES.sectionProfilesCopy)}
+            onReset={() => onResetGroup("profiles")}
+            title={t(SETTINGS_PAGE_MESSAGES.sectionProfilesHeading)}
+          >
+            <div className="settings-form-grid">
+              <ChoiceSelect
+                label={t(SETTINGS_PAGE_MESSAGES.fieldDefaultProfile)}
+                onChange={(value) =>
+                  onUpdate({
+                    profiles: {
+                      ...settings.profiles,
+                      defaultProfileId: value
+                    }
+                  })
+                }
+                options={profileOptions}
+                value={settings.profiles.defaultProfileId}
+              />
+            </div>
+
+            <div className="profile-card-list">
+              {settings.profiles.items.map((profile) => (
+                <section key={profile.id} className="profile-card">
+                  <header className="profile-card-header">
+                    <div>
+                      <p className="settings-kicker">
+                        {profile.source === "builtin"
+                          ? t(SETTINGS_PAGE_MESSAGES.builtinProfile)
+                          : t(SETTINGS_PAGE_MESSAGES.customProfile)}
+                      </p>
+                      <h3>{profile.name}</h3>
+                    </div>
+                    {profile.source === "custom" ? (
+                      <button
+                        className="settings-reset-button profile-delete-button"
+                        onClick={() => onUpdate({ profiles: deleteProfile(settings, profile.id) })}
+                        type="button"
+                      >
+                        {t(SETTINGS_PAGE_MESSAGES.deleteProfile, { name: profile.name })}
+                      </button>
+                    ) : null}
+                  </header>
+
+                  <div className="settings-form-grid">
+                    {profile.source === "custom" ? (
+                      <label className="settings-field">
+                        <span>{t(SETTINGS_PAGE_MESSAGES.fieldProfileName)}</span>
+                        <input
+                          onChange={(event) =>
+                            onUpdate({
+                              profiles: updateProfile(settings, profile.id, {
+                                name: event.target.value
+                              })
+                            })
+                          }
+                          type="text"
+                          value={profile.name}
+                        />
+                      </label>
+                    ) : null}
+                    <label className="settings-field">
+                      <span>{t(SETTINGS_PAGE_MESSAGES.fieldExecutable)}</span>
+                      <input
+                        onChange={(event) =>
+                          onUpdate({
+                            profiles: updateProfile(settings, profile.id, {
+                              executable: event.target.value
+                            })
+                          })
+                        }
+                        type="text"
+                        value={profile.executable}
+                      />
+                    </label>
+                    <label className="settings-field">
+                      <span>{t(SETTINGS_PAGE_MESSAGES.fieldArguments)}</span>
+                      <ProfileArgumentsInput
+                        onCommit={(value) =>
+                          onUpdate({
+                            profiles: updateProfile(settings, profile.id, {
+                              args: parseArgumentList(value)
+                            })
+                          })
+                        }
+                        value={profile.args.join(" ")}
+                      />
+                    </label>
+                    {profile.source === "custom" ? (
+                      <label className="settings-field">
+                        <span>{t(SETTINGS_PAGE_MESSAGES.fieldStartupDirectory)}</span>
+                        <input
+                          onChange={(event) =>
+                            onUpdate({
+                              profiles: updateProfile(settings, profile.id, {
+                                startupDir: emptyStringToNull(event.target.value)
+                              })
+                            })
+                          }
+                          type="text"
+                          value={profile.startupDir ?? ""}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                </section>
+              ))}
+            </div>
+
+            <div className="settings-section-actions">
+              <button
+                className="settings-reset-button"
+                onClick={() => onUpdate({ profiles: addProfile(settings) })}
+                type="button"
+              >
+                {t(SETTINGS_PAGE_MESSAGES.addProfile)}
+              </button>
+            </div>
+          </SettingsSection>
+        ) : null}
+
         {selectedGroup === "localization" ? (
           <SettingsSection
             description={t(SETTINGS_PAGE_MESSAGES.sectionLocalizationCopy)}
@@ -639,6 +823,11 @@ type ChoiceSelectProps = {
   onChange: (value: string) => void;
 };
 
+type ProfileArgumentsInputProps = {
+  value: string;
+  onCommit: (value: string) => void;
+};
+
 function ChoiceSelect({ label, options, value, onChange }: ChoiceSelectProps) {
   return (
     <label className="settings-field">
@@ -652,6 +841,111 @@ function ChoiceSelect({ label, options, value, onChange }: ChoiceSelectProps) {
       </select>
     </label>
   );
+}
+
+function ProfileArgumentsInput({ value, onCommit }: ProfileArgumentsInputProps) {
+  const [draftValue, setDraftValue] = useState(value);
+
+  useEffect(() => {
+    setDraftValue(value);
+  }, [value]);
+
+  function commit() {
+    onCommit(draftValue);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    commit();
+    event.currentTarget.blur();
+  }
+
+  return (
+    <input
+      onBlur={commit}
+      onChange={(event) => setDraftValue(event.target.value)}
+      onKeyDown={handleKeyDown}
+      type="text"
+      value={draftValue}
+    />
+  );
+}
+
+function updateProfile(
+  settings: AppSettings,
+  profileId: string,
+  updates: Partial<ShellProfile>
+): AppSettings["profiles"] {
+  return {
+    ...settings.profiles,
+    items: settings.profiles.items.map((profile) =>
+      profile.id === profileId
+        ? {
+            ...profile,
+            ...updates
+          }
+        : profile
+    )
+  };
+}
+
+function addProfile(settings: AppSettings): AppSettings["profiles"] {
+  const id = createCustomProfileId(settings.profiles.items);
+
+  return {
+    defaultProfileId: settings.profiles.defaultProfileId,
+    items: [
+      ...settings.profiles.items,
+      {
+        id,
+        source: "custom",
+        name: "New Profile",
+        executable: "",
+        args: [],
+        startupDir: null
+      }
+    ]
+  };
+}
+
+function deleteProfile(settings: AppSettings, profileId: string): AppSettings["profiles"] {
+  const items = settings.profiles.items.filter((profile) => profile.id !== profileId);
+  const fallbackDefault = items[0]?.id ?? settings.profiles.defaultProfileId;
+
+  return {
+    defaultProfileId:
+      settings.profiles.defaultProfileId === profileId
+        ? fallbackDefault
+        : settings.profiles.defaultProfileId,
+    items
+  };
+}
+
+function createCustomProfileId(profiles: readonly ShellProfile[]) {
+  const existingIds = new Set(profiles.map((profile) => profile.id));
+  let index = profiles.filter((profile) => profile.source === "custom").length + 1;
+  let candidate = `custom:profile-${index}`;
+
+  while (existingIds.has(candidate)) {
+    index += 1;
+    candidate = `custom:profile-${index}`;
+  }
+
+  return candidate;
+}
+
+function parseArgumentList(value: string) {
+  return value
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function emptyStringToNull(value: string) {
+  return value.trim() ? value : null;
 }
 
 function mapOptions<T extends string>(values: readonly T[], labels: Record<T, string>) {
