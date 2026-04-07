@@ -259,6 +259,7 @@ async fn handle_session_command(command: SessionCommand, client: &DaemonClient) 
                     } else {
                         Some(args.command)
                     },
+                    profile_id: None,
                 })
                 .await
                 .context("create local session")?;

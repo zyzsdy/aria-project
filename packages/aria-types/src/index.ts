@@ -36,7 +36,17 @@ export const RIGHT_CLICK_BEHAVIORS = ["paste", "menu"] as const;
 export const BELL_MODES = ["off", "visual", "system"] as const;
 export const STARTUP_BEHAVIORS = ["open_empty", "restore_previous"] as const;
 export const CLOSE_CONFIRMATIONS = ["never", "confirm_running_sessions"] as const;
-export const SETTINGS_GROUPS = ["appearance", "terminal", "workspace", "localization"] as const;
+export const PROFILE_SOURCES = ["builtin", "custom"] as const;
+export const SETTINGS_GROUPS = [
+  "appearance",
+  "terminal",
+  "workspace",
+  "localization",
+  "profiles"
+] as const;
+export const BUILTIN_POWERSHELL_PROFILE_ID = "builtin:powershell";
+export const BUILTIN_CMD_PROFILE_ID = "builtin:cmd";
+export const BUILTIN_SYSTEM_PROFILE_ID = "builtin:system";
 
 export type HealthStatus = (typeof HEALTH_STATUSES)[number];
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
@@ -53,6 +63,7 @@ export type RightClickBehavior = (typeof RIGHT_CLICK_BEHAVIORS)[number];
 export type BellMode = (typeof BELL_MODES)[number];
 export type StartupBehavior = (typeof STARTUP_BEHAVIORS)[number];
 export type CloseConfirmation = (typeof CLOSE_CONFIRMATIONS)[number];
+export type ProfileSource = (typeof PROFILE_SOURCES)[number];
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
 
 export interface AppInfo {
@@ -93,6 +104,13 @@ export interface HealthResponse {
   readonly message: string;
 }
 
+export interface CreateLocalSessionRequest {
+  readonly size: TerminalSize;
+  readonly cwd: string | null;
+  readonly command: readonly string[] | null;
+  readonly profileId?: string;
+}
+
 export interface SessionSummary {
   readonly sessionId: string;
   readonly title: string;
@@ -129,11 +147,26 @@ export interface LocalizationSettings {
   readonly locale: string;
 }
 
+export interface ShellProfile {
+  readonly id: string;
+  readonly source: ProfileSource;
+  readonly name: string;
+  readonly executable: string;
+  readonly args: readonly string[];
+  readonly startupDir: string | null;
+}
+
+export interface ProfilesSettings {
+  readonly defaultProfileId: string;
+  readonly items: readonly ShellProfile[];
+}
+
 export interface AppSettings {
   readonly appearance: AppearanceSettings;
   readonly terminal: TerminalSettings;
   readonly workspace: WorkspaceSettings;
   readonly localization: LocalizationSettings;
+  readonly profiles: ProfilesSettings;
 }
 
 export interface AppearanceSettingsPatch {
@@ -162,11 +195,17 @@ export interface LocalizationSettingsPatch {
   readonly locale?: string;
 }
 
+export interface ProfilesSettingsPatch {
+  readonly defaultProfileId?: string;
+  readonly items?: readonly ShellProfile[];
+}
+
 export interface UpdateAppSettingsPayload {
   readonly appearance?: AppearanceSettingsPatch;
   readonly terminal?: TerminalSettingsPatch;
   readonly workspace?: WorkspaceSettingsPatch;
   readonly localization?: LocalizationSettingsPatch;
+  readonly profiles?: ProfilesSettingsPatch;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -191,6 +230,19 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   },
   localization: {
     locale: "system"
+  },
+  profiles: {
+    defaultProfileId: BUILTIN_SYSTEM_PROFILE_ID,
+    items: [
+      {
+        id: BUILTIN_SYSTEM_PROFILE_ID,
+        source: "builtin",
+        name: "Default Shell",
+        executable: "/bin/sh",
+        args: [],
+        startupDir: null
+      }
+    ]
   }
 };
 

@@ -1,6 +1,6 @@
 import type { AppSettings, SettingsGroup, UpdateAppSettingsPayload } from "@aria/types";
-import { DEFAULT_APP_SETTINGS } from "@aria/types";
 import { cloneSettings } from "./appSettings";
+import { DEFAULT_APP_SETTINGS } from "./appSettings";
 
 export type SettingsApi = {
   get: () => Promise<AppSettings>;

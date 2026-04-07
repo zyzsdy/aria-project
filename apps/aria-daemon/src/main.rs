@@ -1,3 +1,4 @@
+mod local_profiles;
 mod settings;
 
 use anyhow::{Context, Result};
@@ -24,6 +25,7 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
 };
+use crate::local_profiles::resolve_local_session_request;
 use crate::settings::SettingsStore;
 use tracing::{info, warn};
 
@@ -203,10 +205,18 @@ async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcRe
             Err(error) => err(error),
         },
         "sessions.createLocal" => match decode::<CreateLocalSessionRequest>(request.payload) {
-            Ok(payload) => match state.manager.create_local(payload).await {
-                Ok(response) => ok(response),
-                Err(error) => err(error),
-            },
+            Ok(payload) => {
+                let settings = state.settings.get().await;
+                let resolved = resolve_local_session_request(payload, &settings);
+                match state
+                    .manager
+                    .create_local(resolved.request, resolved.title_override)
+                    .await
+                {
+                    Ok(response) => ok(response),
+                    Err(error) => err(error),
+                }
+            }
             Err(error) => err(error),
         },
         "sessions.getSnapshot" => match decode::<SessionSelector>(request.payload) {

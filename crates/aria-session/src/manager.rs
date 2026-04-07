@@ -117,15 +117,18 @@ impl SessionManager {
     pub async fn create_local(
         &self,
         request: CreateLocalSessionRequest,
+        title_override: Option<String>,
     ) -> Result<CreateLocalSessionResponse> {
         let session_id = SessionId::new();
         let created_at = unix_timestamp();
         let spawn = LocalPtyTransport::spawn(&request)?;
-        let title = spawn
-            .command
-            .first()
-            .cloned()
-            .unwrap_or_else(|| "shell".to_string());
+        let title = title_override.unwrap_or_else(|| {
+            spawn
+                .command
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "shell".to_string())
+        });
         let metadata = SessionMetadata {
             session_id,
             title,

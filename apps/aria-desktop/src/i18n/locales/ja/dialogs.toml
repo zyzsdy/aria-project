@@ -10,3 +10,8 @@ desktop_version = "Aria Desktop バージョン: {version}"
 webview_version = "Webview2 バージョン: {version}"
 aria_core_version = "Aria Core バージョン: {version}"
 aria_core_not_connected = "Aria Core に接続されていません"
+
+[dialogs.session_launch_error]
+title = "\u30bb\u30c3\u30b7\u30e7\u30f3\u3092\u4f5c\u6210\u3067\u304d\u307e\u305b\u3093"
+copy = "Aria \u306f\u9078\u629e\u3055\u308c\u305f shell \u30d7\u30ed\u30d5\u30a1\u30a4\u30eb\u3092\u8d77\u52d5\u3067\u304d\u307e\u305b\u3093\u3002\u30b3\u30de\u30f3\u30c9\u3001\u5f15\u6570\u3001\u307e\u305f\u306f\u8d77\u52d5\u30c7\u30a3\u30ec\u30af\u30c8\u30ea\u3092\u78ba\u8a8d\u3057\u3066\u3001\u3082\u3046\u4e00\u5ea6\u304a\u8a66\u3057\u304f\u3060\u3055\u3044\u3002"
+details_label = "\u30a8\u30e9\u30fc\u8a73\u7d30"

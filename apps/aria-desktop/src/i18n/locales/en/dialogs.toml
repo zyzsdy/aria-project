@@ -10,3 +10,8 @@ webview_version = "Webview2 version: {version}"
 
 [dialogs.modal]
 close = "Close dialog"
+
+[dialogs.session_launch_error]
+title = "Unable to create session"
+copy = "Aria could not start the selected shell profile. Review the command, arguments, or startup directory and try again."
+details_label = "Error details"
