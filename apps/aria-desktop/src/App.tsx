@@ -419,7 +419,12 @@ function AppShell({
   }
 
   return (
-    <>
+    <div
+      className="app-shell-root"
+      onContextMenu={(event) => {
+        event.preventDefault();
+      }}
+    >
       <main
         className={`workbench ${openSidebar ? "workbench-sidebar-open" : "workbench-sidebar-closed"}`}
         data-theme={settings.appearance.themePreset}
@@ -496,7 +501,7 @@ function AppShell({
           <pre className="dialog-error-details">{sessionLaunchError ?? ""}</pre>
         </div>
       </ModalDialog>
-    </>
+    </div>
   );
 }
 

@@ -7,8 +7,10 @@ import type {
   SessionStreamMetadata
 } from "@aria/types";
 import { FitAddon } from "@xterm/addon-fit";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Terminal } from "@xterm/xterm";
+import { defineMessages } from "../../../i18n/messages";
+import { useT } from "../../../i18n/react";
 import { applySettingsToTerminal } from "../../../settings/appSettings";
 import { createTerminalOptions } from "../../../terminal/options";
 import { activateUnicodeGraphemes } from "../../../terminal/unicode";
@@ -17,6 +19,21 @@ import {
   createTerminalStreamController,
   type StreamState
 } from "./terminalStreamController";
+
+const TERMINAL_TAB_SURFACE_MESSAGES = defineMessages({
+  copy: {
+    key: "common.actions.copy",
+    defaultMessage: "Copy"
+  },
+  paste: {
+    key: "common.actions.paste",
+    defaultMessage: "Paste"
+  },
+  selectAll: {
+    key: "common.actions.select_all",
+    defaultMessage: "Select All"
+  }
+});
 
 type TerminalTabSurfaceProps = {
   sessionId: string;
@@ -37,8 +54,14 @@ export function TerminalTabSurface({
   onStreamMetadata,
   onStreamMetadataDelta
 }: TerminalTabSurfaceProps) {
+  const t = useT();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const [streamState, setStreamState] = useState<StreamState>("detached");
+  const [contextMenuState, setContextMenuState] = useState<{
+    hasSelection: boolean;
+    x: number;
+    y: number;
+  } | null>(null);
 
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -67,6 +90,44 @@ export function TerminalTabSurface({
       onStreamMetadataDelta
     };
   }, [onStreamDetached, onStreamError, onStreamMetadata, onStreamMetadataDelta]);
+
+  async function copyTerminalSelection() {
+    const terminal = terminalRef.current;
+    if (!terminal?.hasSelection() || !navigator.clipboard?.writeText) {
+      return;
+    }
+
+    const selection = terminal.getSelection();
+    if (!selection) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(selection);
+    terminal.clearSelection();
+  }
+
+  async function pasteClipboardContents() {
+    if (!navigator.clipboard?.readText) {
+      return;
+    }
+
+    const text = await navigator.clipboard.readText();
+    if (!text) {
+      return;
+    }
+
+    await invoke("write_session", { sessionId, data: text });
+  }
+
+  async function runCopyAndPasteBehavior() {
+    const terminal = terminalRef.current;
+    if (terminal?.hasSelection()) {
+      await copyTerminalSelection();
+      return;
+    }
+
+    await pasteClipboardContents();
+  }
 
   useEffect(() => {
     if (!host) {
@@ -102,24 +163,20 @@ export function TerminalTabSurface({
     resizeObserver.observe(host);
 
     const handleContextMenu = (event: MouseEvent) => {
-      if (settingsRef.current.terminal.rightClickBehavior === "menu") {
-        return;
-      }
-
       event.preventDefault();
-      if (!navigator.clipboard?.readText) {
+
+      const terminal = terminalRef.current;
+      if (settingsRef.current.terminal.rightClickBehavior === "menu") {
+        setContextMenuState({
+          hasSelection: terminal?.hasSelection() ?? false,
+          x: event.clientX,
+          y: event.clientY
+        });
         return;
       }
 
-      void navigator.clipboard
-        .readText()
-        .then((text) => {
-          if (!text) {
-            return;
-          }
-          return invoke("write_session", { sessionId, data: text });
-        })
-        .catch(() => undefined);
+      setContextMenuState(null);
+      void runCopyAndPasteBehavior().catch(() => undefined);
     };
     host.addEventListener("contextmenu", handleContextMenu);
 
@@ -174,6 +231,7 @@ export function TerminalTabSurface({
       controllerRef.current = null;
       terminalRef.current = null;
       fitAddonRef.current = null;
+      setContextMenuState(null);
       host.removeEventListener("contextmenu", handleContextMenu);
       resizeObserver.disconnect();
       disposeResize.dispose();
@@ -201,6 +259,37 @@ export function TerminalTabSurface({
     fitAddonRef.current?.fit();
   }, [isActive]);
 
+  useEffect(() => {
+    if (!contextMenuState) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".terminal-context-menu")) {
+        return;
+      }
+
+      setContextMenuState(null);
+    };
+
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      setContextMenuState(null);
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [contextMenuState]);
+
   return (
     <section
       aria-hidden={!isActive}
@@ -209,6 +298,53 @@ export function TerminalTabSurface({
       data-terminal-active={isActive}
     >
       <div ref={handleHostRef} className="terminal-surface" />
+      {contextMenuState ? (
+        <div
+          className="app-menu terminal-context-menu"
+          role="menu"
+          style={
+            {
+              left: `${contextMenuState.x}px`,
+              top: `${contextMenuState.y}px`
+            } as CSSProperties
+          }
+        >
+          <button
+            className="app-menu-item"
+            disabled={!contextMenuState.hasSelection}
+            onClick={() => {
+              void copyTerminalSelection().catch(() => undefined);
+              setContextMenuState(null);
+            }}
+            role="menuitem"
+            type="button"
+          >
+            <span>{t(TERMINAL_TAB_SURFACE_MESSAGES.copy)}</span>
+          </button>
+          <button
+            className="app-menu-item"
+            onClick={() => {
+              void pasteClipboardContents().catch(() => undefined);
+              setContextMenuState(null);
+            }}
+            role="menuitem"
+            type="button"
+          >
+            <span>{t(TERMINAL_TAB_SURFACE_MESSAGES.paste)}</span>
+          </button>
+          <button
+            className="app-menu-item"
+            onClick={() => {
+              terminalRef.current?.selectAll();
+              setContextMenuState(null);
+            }}
+            role="menuitem"
+            type="button"
+          >
+            <span>{t(TERMINAL_TAB_SURFACE_MESSAGES.selectAll)}</span>
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

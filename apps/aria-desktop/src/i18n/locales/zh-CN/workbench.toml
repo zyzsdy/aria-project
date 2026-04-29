@@ -2,7 +2,7 @@
 aria_label = "工作台分区"
 sessions = "会话"
 collections = "集合"
-open_tools_menu = "打开工具菜单"
+open_menu = "打开菜单"
 
 [workbench.sidebar]
 panel_aria_label = "{panel} 面板"

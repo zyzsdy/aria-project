@@ -1,7 +1,7 @@
 [workbench.activity_rail]
 aria_label = "Workbench sections"
 collections = "Collections"
-open_tools_menu = "Open tools menu"
+open_menu = "Open menu"
 sessions = "Sessions"
 
 [workbench.sidebar]

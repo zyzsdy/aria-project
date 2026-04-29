@@ -60,6 +60,10 @@ body {
   background: transparent;
 }
 
+.app-shell-root {
+  height: 100%;
+}
+
 button,
 input,
 select {
@@ -136,34 +140,52 @@ input[type="range"] {
   padding-top: 10px;
 }
 
-.rail-menu {
-  position: absolute;
-  bottom: 8px;
-  left: calc(100% + 10px);
-  z-index: 30;
+.app-menu {
   display: grid;
   min-width: 180px;
   padding: 6px;
   border: 1px solid var(--border-strong);
-  background: rgba(13, 18, 25, 0.98);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 26%),
+    rgba(13, 18, 25, 0.98);
+  box-shadow:
+    0 18px 34px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-.rail-menu-item {
+.app-menu-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   min-height: 34px;
   padding: 0 10px;
   border: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-primary);
   text-align: left;
 }
 
-.rail-menu-item:hover,
-.rail-menu-item:focus-visible {
+.app-menu-item:hover,
+.app-menu-item:focus-visible,
+.app-menu-item-active {
   background: rgba(255, 255, 255, 0.06);
   outline: none;
+}
+
+.app-menu-item:disabled {
+  color: var(--text-muted);
+  background: transparent;
+  cursor: default;
+}
+
+.rail-menu {
+  position: absolute;
+  bottom: 8px;
+  left: calc(100% + 10px);
+  z-index: 30;
 }
 
 .rail-button {
@@ -331,31 +353,11 @@ input[type="range"] {
   top: calc(100% + 8px);
   right: 0;
   z-index: 30;
-  display: grid;
   min-width: 220px;
-  padding: 6px;
-  border: 1px solid var(--border-strong);
-  background: rgba(13, 18, 25, 0.98);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
 }
 
 .sidebar-menu-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 34px;
-  padding: 0 10px;
-  border: 0;
-  background: transparent;
-  color: var(--text-primary);
   text-align: left;
-}
-
-.sidebar-menu-item:hover,
-.sidebar-menu-item:focus-visible {
-  background: rgba(255, 255, 255, 0.06);
-  outline: none;
 }
 
 .sidebar-menu-badge {
@@ -687,6 +689,12 @@ input[type="range"] {
   overflow-y: auto !important;
 }
 
+.terminal-context-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 190px;
+}
+
 .terminal-empty-state {
   display: grid;
   width: 100%;
@@ -877,12 +885,45 @@ input[type="range"] {
 }
 
 .settings-field input,
+.choice-select-trigger,
 .settings-field select {
   min-height: 38px;
   padding: 0 10px;
   border: 1px solid var(--border-soft);
   background: rgba(255, 255, 255, 0.03);
   color: var(--text-primary);
+}
+
+.choice-select {
+  position: relative;
+}
+
+.choice-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+}
+
+.choice-select-trigger:hover,
+.choice-select-trigger:focus-visible {
+  border-color: var(--border-strong);
+  outline: none;
+}
+
+.choice-select-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  width: 100%;
+}
+
+.choice-select-option-selected {
+  color: var(--text-primary);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent), var(--accent-muted);
 }
 
 .settings-checkbox {

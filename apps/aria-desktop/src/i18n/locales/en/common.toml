@@ -1,10 +1,13 @@
 [common.actions]
 close = "Close"
+copy = "Copy"
 dismiss = "Dismiss"
+paste = "Paste"
 reset_to_defaults = "Reset to defaults"
+select_all = "Select All"
 
 [common.labels]
 about = "About"
 check_for_updates = "Check for Updates"
+menu = "Menu"
 settings = "Settings"
-tools = "Tools"

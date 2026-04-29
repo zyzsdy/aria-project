@@ -134,7 +134,6 @@ export interface AppearanceSettings {
 export interface TerminalSettings {
   readonly scrollbackLines: number;
   readonly rightClickBehavior: RightClickBehavior;
-  readonly copyOnSelect: boolean;
   readonly bellMode: BellMode;
 }
 
@@ -182,7 +181,6 @@ export interface AppearanceSettingsPatch {
 export interface TerminalSettingsPatch {
   readonly scrollbackLines?: number;
   readonly rightClickBehavior?: RightClickBehavior;
-  readonly copyOnSelect?: boolean;
   readonly bellMode?: BellMode;
 }
 
@@ -221,7 +219,6 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   terminal: {
     scrollbackLines: 2000,
     rightClickBehavior: "paste",
-    copyOnSelect: false,
     bellMode: "off"
   },
   workspace: {

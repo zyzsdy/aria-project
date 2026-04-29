@@ -43,7 +43,6 @@ cursor_blinks = "カーソルを点滅させる"
 scrollback_lines = "スクロールバック行数"
 right_click = "右クリック"
 bell_mode = "ベルモード"
-copy_on_select = "選択時にコピー"
 startup_behavior = "起動時の動作"
 close_confirmation = "終了確認"
 language = "言語"
@@ -78,7 +77,7 @@ underline = "下線"
 bar = "バー"
 
 [settings.options.right_click]
-paste = "貼り付け"
+paste = "コピーして貼り付け"
 menu = "メニュー"
 
 [settings.options.bell_mode]

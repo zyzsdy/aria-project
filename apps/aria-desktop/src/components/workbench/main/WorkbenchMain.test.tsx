@@ -70,7 +70,6 @@ describe("WorkbenchMain", () => {
             ...DEFAULT_APP_SETTINGS.terminal,
             scrollbackLines: 2000,
             rightClickBehavior: "paste",
-            copyOnSelect: false,
             bellMode: "off"
           },
           workspace: {
@@ -130,7 +129,6 @@ describe("WorkbenchMain", () => {
             ...DEFAULT_APP_SETTINGS.terminal,
             scrollbackLines: 2000,
             rightClickBehavior: "paste",
-            copyOnSelect: false,
             bellMode: "off"
           },
           workspace: {

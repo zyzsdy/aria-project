@@ -26,13 +26,13 @@ const ACTIVITY_RAIL_MESSAGES = defineMessages({
     key: "workbench.activity_rail.aria_label",
     defaultMessage: "Workbench sections"
   },
-  openToolsMenu: {
-    key: "workbench.activity_rail.open_tools_menu",
-    defaultMessage: "Open tools menu"
+  openMenu: {
+    key: "workbench.activity_rail.open_menu",
+    defaultMessage: "Open menu"
   },
-  tools: {
-    key: "common.labels.tools",
-    defaultMessage: "Tools"
+  menu: {
+    key: "common.labels.menu",
+    defaultMessage: "Menu"
   },
   settings: {
     key: "common.labels.settings",
@@ -91,7 +91,7 @@ export function ActivityRail({
       <div className="rail-group rail-group-bottom">
         <div className="rail-entry">
           <button
-            aria-label={t(ACTIVITY_RAIL_MESSAGES.openToolsMenu)}
+            aria-label={t(ACTIVITY_RAIL_MESSAGES.openMenu)}
             className={`rail-button ${isToolMenuOpen ? "rail-button-active" : ""}`}
             onClick={() => onToolMenuOpenChange(!isToolMenuOpen)}
             type="button"
@@ -99,17 +99,32 @@ export function ActivityRail({
             <Ellipsis aria-hidden="true" size={22} strokeWidth={1.9} />
           </button>
           <span className="rail-tooltip" role="tooltip">
-            {t(ACTIVITY_RAIL_MESSAGES.tools)}
+            {t(ACTIVITY_RAIL_MESSAGES.menu)}
           </span>
           {isToolMenuOpen ? (
-            <div className="rail-menu" role="menu">
-              <button className="rail-menu-item" onClick={onSettings} role="menuitem" type="button">
+            <div className="app-menu rail-menu" role="menu">
+              <button
+                className="app-menu-item rail-menu-item"
+                onClick={onSettings}
+                role="menuitem"
+                type="button"
+              >
                 {t(ACTIVITY_RAIL_MESSAGES.settings)}
               </button>
-              <button className="rail-menu-item" onClick={onCheckForUpdates} role="menuitem" type="button">
+              <button
+                className="app-menu-item rail-menu-item"
+                onClick={onCheckForUpdates}
+                role="menuitem"
+                type="button"
+              >
                 {t(ACTIVITY_RAIL_MESSAGES.checkForUpdates)}
               </button>
-              <button className="rail-menu-item" onClick={onAbout} role="menuitem" type="button">
+              <button
+                className="app-menu-item rail-menu-item"
+                onClick={onAbout}
+                role="menuitem"
+                type="button"
+              >
                 {t(ACTIVITY_RAIL_MESSAGES.about)}
               </button>
             </div>

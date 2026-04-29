@@ -244,7 +244,6 @@ impl Default for AppearanceSettings {
 pub struct TerminalSettings {
     pub scrollback_lines: usize,
     pub right_click_behavior: RightClickBehavior,
-    pub copy_on_select: bool,
     pub bell_mode: BellMode,
 }
 
@@ -253,7 +252,6 @@ impl Default for TerminalSettings {
         Self {
             scrollback_lines: 2_000,
             right_click_behavior: RightClickBehavior::Paste,
-            copy_on_select: false,
             bell_mode: BellMode::Off,
         }
     }
@@ -382,8 +380,6 @@ pub struct TerminalSettingsPatch {
     pub scrollback_lines: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub right_click_behavior: Option<RightClickBehavior>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub copy_on_select: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bell_mode: Option<BellMode>,
 }

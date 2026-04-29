@@ -110,11 +110,11 @@ export function SidebarHost({
                 <ChevronDown aria-hidden="true" size={13} strokeWidth={2} />
               </button>
               {openProfileMenu ? (
-                <div className="sidebar-menu" role="menu">
+                <div className="app-menu sidebar-menu" role="menu">
                   {profiles.map((profile) => (
                     <button
                       key={profile.id}
-                      className="sidebar-menu-item"
+                      className="app-menu-item sidebar-menu-item"
                       onClick={() => onCreateSessionWithProfile(profile.id)}
                       role="menuitem"
                       type="button"

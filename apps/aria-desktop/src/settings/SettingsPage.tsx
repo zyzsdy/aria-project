@@ -1,4 +1,13 @@
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode
+} from "react";
 import type {
   AppSettings,
   BellMode,
@@ -158,10 +167,6 @@ const SETTINGS_PAGE_MESSAGES = defineMessages({
     key: "settings.fields.bell_mode",
     defaultMessage: "Bell mode"
   },
-  fieldCopyOnSelect: {
-    key: "settings.fields.copy_on_select",
-    defaultMessage: "Copy on select"
-  },
   fieldStartupBehavior: {
     key: "settings.fields.startup_behavior",
     defaultMessage: "Startup behavior"
@@ -232,7 +237,7 @@ const SETTINGS_PAGE_MESSAGES = defineMessages({
   },
   rightClickPaste: {
     key: "settings.options.right_click.paste",
-    defaultMessage: "Paste"
+    defaultMessage: "Copy and paste"
   },
   rightClickMenu: {
     key: "settings.options.right_click.menu",
@@ -583,21 +588,6 @@ export function SettingsPage({
                 options={bellModeOptions}
                 value={settings.terminal.bellMode}
               />
-              <label className="settings-checkbox">
-                <input
-                  checked={settings.terminal.copyOnSelect}
-                  onChange={(event) =>
-                    onUpdate({
-                      terminal: {
-                        ...settings.terminal,
-                        copyOnSelect: event.target.checked
-                      }
-                    })
-                  }
-                  type="checkbox"
-                />
-                <span>{t(SETTINGS_PAGE_MESSAGES.fieldCopyOnSelect)}</span>
-              </label>
             </div>
           </SettingsSection>
         ) : null}
@@ -829,17 +819,176 @@ type ProfileArgumentsInputProps = {
 };
 
 function ChoiceSelect({ label, options, value, onChange }: ChoiceSelectProps) {
+  const fieldId = useId();
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedIndex = useMemo(
+    () => options.findIndex((option) => option.value === value),
+    [options, value]
+  );
+  const [activeIndex, setActiveIndex] = useState(selectedIndex >= 0 ? selectedIndex : 0);
+  const selectedOption = options[selectedIndex] ?? options[0];
+
+  useEffect(() => {
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+  }, [selectedIndex]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || shellRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsOpen(false);
+    };
+
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isOpen]);
+
+  function commitSelection(nextIndex: number) {
+    const nextOption = options[nextIndex];
+    if (!nextOption) {
+      return;
+    }
+
+    onChange(nextOption.value);
+    setIsOpen(false);
+    setActiveIndex(nextIndex);
+    triggerRef.current?.focus();
+  }
+
+  function openMenu(preferredIndex = selectedIndex >= 0 ? selectedIndex : 0) {
+    setActiveIndex(preferredIndex);
+    setIsOpen(true);
+  }
+
+  function handleTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    switch (event.key) {
+      case " ":
+      case "Enter":
+        event.preventDefault();
+        if (!isOpen) {
+          openMenu();
+          return;
+        }
+
+        commitSelection(activeIndex);
+        return;
+      case "ArrowDown":
+        event.preventDefault();
+        if (!isOpen) {
+          openMenu();
+          return;
+        }
+
+        setActiveIndex((current) => Math.min(current + 1, options.length - 1));
+        return;
+      case "ArrowUp":
+        event.preventDefault();
+        if (!isOpen) {
+          openMenu(selectedIndex > 0 ? selectedIndex - 1 : 0);
+          return;
+        }
+
+        setActiveIndex((current) => Math.max(current - 1, 0));
+        return;
+      case "Home":
+        if (!isOpen) {
+          return;
+        }
+
+        event.preventDefault();
+        setActiveIndex(0);
+        return;
+      case "End":
+        if (!isOpen) {
+          return;
+        }
+
+        event.preventDefault();
+        setActiveIndex(options.length - 1);
+        return;
+      case "Escape":
+        if (!isOpen) {
+          return;
+        }
+
+        event.preventDefault();
+        setIsOpen(false);
+        return;
+      default:
+        return;
+    }
+  }
+
   return (
-    <label className="settings-field">
-      <span>{label}</span>
-      <select onChange={(event) => onChange(event.target.value)} value={value}>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div ref={shellRef} className="settings-field choice-select">
+      <span id={fieldId}>{label}</span>
+      <button
+        ref={triggerRef}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-labelledby={fieldId}
+        className="choice-select-trigger"
+        onClick={() => {
+          if (isOpen) {
+            setIsOpen(false);
+            return;
+          }
+
+          openMenu();
+        }}
+        onKeyDown={handleTriggerKeyDown}
+        type="button"
+      >
+        <span>{selectedOption?.label ?? ""}</span>
+        <ChevronDown aria-hidden="true" size={16} strokeWidth={1.8} />
+      </button>
+      {isOpen ? (
+        <div
+          aria-labelledby={fieldId}
+          className="app-menu choice-select-menu"
+          role="listbox"
+        >
+          {options.map((option, index) => (
+            <button
+              key={option.value}
+              aria-selected={option.value === value}
+              className={`app-menu-item choice-select-option ${
+                activeIndex === index ? "app-menu-item-active" : ""
+              } ${option.value === value ? "choice-select-option-selected" : ""}`}
+              onClick={() => commitSelection(index)}
+              onMouseEnter={() => setActiveIndex(index)}
+              role="option"
+              type="button"
+            >
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -854,7 +1003,7 @@ function ProfileArgumentsInput({ value, onCommit }: ProfileArgumentsInputProps) 
     onCommit(draftValue);
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter") {
       return;
     }

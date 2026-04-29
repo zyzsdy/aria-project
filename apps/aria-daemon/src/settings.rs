@@ -98,9 +98,6 @@ fn apply_settings_patch(settings: &mut AppSettings, patch: &UpdateAppSettingsPay
         if let Some(right_click_behavior) = terminal.right_click_behavior {
             settings.terminal.right_click_behavior = right_click_behavior;
         }
-        if let Some(copy_on_select) = terminal.copy_on_select {
-            settings.terminal.copy_on_select = copy_on_select;
-        }
         if let Some(bell_mode) = terminal.bell_mode {
             settings.terminal.bell_mode = bell_mode;
         }

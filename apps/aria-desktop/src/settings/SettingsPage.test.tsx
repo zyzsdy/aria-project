@@ -79,6 +79,72 @@ describe("SettingsPage", () => {
     expect(argumentsInput!.value).toBe("pwsh ");
   });
 
+  it("uses a themed custom dropdown for terminal settings", async () => {
+    renderSettingsPage(<SettingsPageHarness selectedGroup="terminal" />);
+
+    expect(container?.querySelector("select")).toBeNull();
+
+    const rightClickTrigger = findButtonByFieldLabel("Right click");
+    expect(rightClickTrigger?.textContent).toContain("Copy and paste");
+
+    act(() => {
+      rightClickTrigger?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container?.querySelector(".choice-select-menu")).not.toBeNull();
+
+    const menuOption = findButtonByText("Menu");
+    expect(menuOption).not.toBeNull();
+
+    act(() => {
+      menuOption?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container?.querySelector(".choice-select-menu")).toBeNull();
+    expect(findButtonByFieldLabel("Right click")?.textContent).toContain("Menu");
+  });
+
+  it("supports keyboard navigation in the themed dropdown", async () => {
+    renderSettingsPage(<SettingsPageHarness selectedGroup="terminal" />);
+
+    const rightClickTrigger = findButtonByFieldLabel("Right click");
+    expect(rightClickTrigger).not.toBeNull();
+
+    act(() => {
+      rightClickTrigger?.focus();
+      rightClickTrigger?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "Enter"
+        })
+      );
+    });
+
+    expect(container?.querySelector(".choice-select-menu")).not.toBeNull();
+
+    await act(async () => {
+      rightClickTrigger?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "ArrowDown"
+        })
+      );
+      await Promise.resolve();
+    });
+
+    act(() => {
+      rightClickTrigger?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "Enter"
+        })
+      );
+    });
+
+    expect(container?.querySelector(".choice-select-menu")).toBeNull();
+    expect(findButtonByFieldLabel("Right click")?.textContent).toContain("Menu");
+  });
+
   function renderSettingsPage(node?: ReactNode) {
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -98,9 +164,29 @@ describe("SettingsPage", () => {
 
     return field?.querySelector("input") ?? null;
   }
+
+  function findButtonByFieldLabel(label: string) {
+    const field = Array.from(container?.querySelectorAll(".settings-field") ?? []).find(
+      (candidate) => candidate.textContent?.includes(label)
+    );
+
+    return field?.querySelector("button") ?? null;
+  }
+
+  function findButtonByText(label: string) {
+    return (
+      Array.from(container?.querySelectorAll("button") ?? []).find((candidate) =>
+        candidate.textContent?.includes(label)
+      ) ?? null
+    );
+  }
 });
 
-function SettingsPageHarness() {
+function SettingsPageHarness({
+  selectedGroup = "profiles"
+}: {
+  selectedGroup?: Parameters<typeof SettingsPage>[0]["selectedGroup"];
+}) {
   const [settings, setSettings] = useState(() => ({
     ...createPlatformDefaultSettings("windows"),
     profiles: {
@@ -150,7 +236,7 @@ function SettingsPageHarness() {
             : current.profiles
         }))
       }
-      selectedGroup="profiles"
+      selectedGroup={selectedGroup}
       settings={settings}
     />
   );

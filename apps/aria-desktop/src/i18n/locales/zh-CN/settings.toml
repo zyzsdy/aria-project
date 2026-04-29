@@ -43,7 +43,6 @@ cursor_blinks = "光标闪烁"
 scrollback_lines = "回滚行数"
 right_click = "右键操作"
 bell_mode = "提示铃模式"
-copy_on_select = "选择时复制"
 startup_behavior = "启动行为"
 close_confirmation = "关闭确认"
 language = "语言"
@@ -78,7 +77,7 @@ underline = "下划线"
 bar = "竖线"
 
 [settings.options.right_click]
-paste = "粘贴"
+paste = "复制和粘贴"
 menu = "菜单"
 
 [settings.options.bell_mode]

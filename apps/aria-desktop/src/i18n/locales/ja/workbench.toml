@@ -2,7 +2,7 @@
 aria_label = "ワークベンチのセクション"
 sessions = "セッション"
 collections = "コレクション"
-open_tools_menu = "ツールメニューを開く"
+open_menu = "メニューを開く"
 
 [workbench.sidebar]
 panel_aria_label = "{panel} パネル"

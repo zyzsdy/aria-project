@@ -2,7 +2,6 @@
 arguments = "Arguments"
 bell_mode = "Bell mode"
 close_confirmation = "Close confirmation"
-copy_on_select = "Copy on select"
 cursor_blinks = "Cursor blinks"
 cursor_style = "Cursor style"
 default_profile = "Default profile"
@@ -48,7 +47,7 @@ zh_cn = "Simplified Chinese"
 
 [settings.options.right_click]
 menu = "Menu"
-paste = "Paste"
+paste = "Copy and paste"
 
 [settings.options.startup_behavior]
 open_empty = "Open empty"
