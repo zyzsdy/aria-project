@@ -6,8 +6,8 @@ use aria_core::{init_observability, AppRole, BootstrapContext};
 use aria_ipc::{
     AttachViewerRequest, ContractError, CreateLocalSessionRequest, DaemonClient, DaemonInfo,
     DetachViewerRequest, EmptyResponse, GetSettingsRequest, HealthRequest, HealthResponse,
-    ListSessionsRequest, ReadScrollbackRequest, ResetSettingsGroupRequest, RpcRequest,
-    RpcResponse, SessionResizeRequest, SessionSelector, SessionWriteRequest,
+    ListSessionsRequest, ReadScrollbackRequest, RenameSessionRequest, ResetSettingsGroupRequest,
+    RpcRequest, RpcResponse, SessionResizeRequest, SessionSelector, SessionWriteRequest,
     UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, HealthStatus};
@@ -249,6 +249,13 @@ async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcRe
         },
         "sessions.close" => match decode::<SessionSelector>(request.payload) {
             Ok(payload) => match state.manager.close(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(error),
+            },
+            Err(error) => err(error),
+        },
+        "sessions.rename" => match decode::<RenameSessionRequest>(request.payload) {
+            Ok(payload) => match state.manager.rename(payload).await {
                 Ok(response) => ok(response),
                 Err(error) => err(error),
             },

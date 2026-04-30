@@ -695,6 +695,27 @@ input[type="range"] {
   min-width: 190px;
 }
 
+.session-context-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 160px;
+}
+
+.rename-session-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.rename-session-input:focus {
+  border-color: var(--accent);
+}
+
 .terminal-empty-state {
   display: grid;
   width: 100%;

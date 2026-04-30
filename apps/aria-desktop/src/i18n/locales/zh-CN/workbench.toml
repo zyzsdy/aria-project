@@ -14,6 +14,10 @@ default_profile_badge = "默认"
 [workbench.sidebar.sessions]
 title = "会话"
 empty = "还没有会话。"
+rename = "重命名"
+terminate = "终止"
+rename_dialog_title = "重命名会话"
+rename_placeholder = "会话名称"
 
 [workbench.sidebar.collections]
 title = "集合"

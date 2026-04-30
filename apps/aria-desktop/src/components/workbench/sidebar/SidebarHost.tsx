@@ -44,6 +44,8 @@ type SidebarHostProps = {
   onProfileMenuOpenChange: (next: boolean) => void;
   onRefresh: () => void;
   onSelectSession: (sessionId: string) => void;
+  onRenameSession: (sessionId: string) => void;
+  onCloseSession: (sessionId: string) => void;
   openSidebar: SidebarPanel;
   openProfileMenu: boolean;
   profiles: readonly ShellProfile[];
@@ -59,6 +61,8 @@ export function SidebarHost({
   onProfileMenuOpenChange,
   onRefresh,
   onSelectSession,
+  onRenameSession,
+  onCloseSession,
   openSidebar,
   openProfileMenu,
   profiles,
@@ -138,6 +142,8 @@ export function SidebarHost({
         {isSessions ? (
           <SessionSidebar
             onSelectSession={onSelectSession}
+            onRenameSession={onRenameSession}
+            onCloseSession={onCloseSession}
             selectedSessionId={selectedSessionId}
             sessions={sessions}
           />

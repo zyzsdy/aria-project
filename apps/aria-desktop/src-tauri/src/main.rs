@@ -5,9 +5,9 @@ use aria_core::{init_observability, AppRole, BootstrapContext};
 use aria_ipc::{
     AppSettings, AttachViewerRequest, AttachViewerResponse, CreateLocalSessionRequest,
     CreateLocalSessionResponse, DaemonClient, DetachViewerRequest, GetSettingsRequest,
-    HealthRequest, HealthResponse, ListSessionsRequest, ResetSettingsGroupRequest,
-    RpcRequest, RpcResponse, SessionSelector, SessionResizeRequest, SessionSnapshot,
-    SessionStreamFrame, SessionSummary, SessionWriteRequest, SettingsGroup,
+    HealthRequest, HealthResponse, ListSessionsRequest, RenameSessionRequest,
+    ResetSettingsGroupRequest, RpcRequest, RpcResponse, SessionSelector, SessionResizeRequest,
+    SessionSnapshot, SessionStreamFrame, SessionSummary, SessionWriteRequest, SettingsGroup,
     UpdateAppSettingsPayload, UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, SessionId, TerminalSize, ViewerId};
@@ -131,6 +131,51 @@ async fn write_session(
         .daemon
         .client
         .write_session(SessionWriteRequest { session_id, data })
+        .await
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn close_session(
+    state: State<'_, DesktopState>,
+    session_id: String,
+) -> Result<(), String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    let session_id = session_id
+        .parse::<SessionId>()
+        .map_err(|error| format!("invalid session id: {error}"))?;
+    state
+        .daemon
+        .client
+        .close_session(SessionSelector { session_id })
+        .await
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn rename_session(
+    state: State<'_, DesktopState>,
+    session_id: String,
+    title: String,
+) -> Result<(), String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    let session_id = session_id
+        .parse::<SessionId>()
+        .map_err(|error| format!("invalid session id: {error}"))?;
+    state
+        .daemon
+        .client
+        .rename_session(RenameSessionRequest { session_id, title })
         .await
         .map(|_| ())
         .map_err(|error| error.to_string())
@@ -333,6 +378,8 @@ fn main() -> Result<()> {
             create_local_session,
             get_session_snapshot,
             write_session,
+            close_session,
+            rename_session,
             resize_session,
             attach_session_stream,
             detach_viewer,

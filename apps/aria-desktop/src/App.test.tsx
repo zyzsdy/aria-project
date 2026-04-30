@@ -3,6 +3,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SessionSummary } from "@aria/types";
 import { createPlatformDefaultSettings } from "./settings/appSettings";
 
 const { invokeMock } = vi.hoisted(() => ({
@@ -11,6 +12,10 @@ const { invokeMock } = vi.hoisted(() => ({
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock
+}));
+
+vi.mock("./components/workbench/main/TerminalTabSurface", () => ({
+  TerminalTabSurface: () => null
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -131,6 +136,60 @@ describe("App", () => {
     );
   });
 
+  it("removes a terminated sidebar session and its tab before close_session resolves", async () => {
+    const settings = createPlatformDefaultSettings("windows");
+    const session = createSessionSummary("session-a", "Alpha");
+    let sessions: SessionSummary[] = [session];
+    let resolveCloseSession: () => void = () => undefined;
+    const closeSessionPromise = new Promise<void>((resolve) => {
+      resolveCloseSession = resolve;
+    });
+
+    invokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
+      switch (command) {
+        case "get_app_settings":
+          return settings;
+        case "list_sessions":
+          return sessions;
+        case "close_session":
+          expect(payload).toEqual({ sessionId: "session-a" });
+          return closeSessionPromise;
+        default:
+          throw new Error(`Unexpected invoke command: ${command}`);
+      }
+    });
+
+    renderApp();
+    await waitForElement(".sidebar-tree-row");
+    expect(container?.textContent).toContain("Alpha");
+
+    act(() => {
+      container
+        ?.querySelector(".sidebar-tree-row")
+        ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    const terminateButton = await waitForButton("Terminate");
+    act(() => {
+      terminateButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    expect(invokeMock).toHaveBeenCalledWith("close_session", { sessionId: "session-a" });
+    expect(container?.querySelector(".sidebar-tree-row")).toBeNull();
+    expect(container?.textContent).not.toContain("Alpha");
+
+    sessions = [];
+    resolveCloseSession();
+    await flushAsyncWork();
+
+    expect(invokeMock.mock.calls.filter(([command]) => command === "close_session")).toHaveLength(
+      1
+    );
+    expect(container?.textContent).not.toContain("Alpha");
+  });
+
   function renderApp() {
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -158,6 +217,19 @@ describe("App", () => {
     throw new Error(`Unable to find button: ${label}`);
   }
 
+  async function waitForElement(selector: string) {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const element = container?.querySelector(selector);
+      if (element) {
+        return element;
+      }
+
+      await flushAsyncWork();
+    }
+
+    throw new Error(`Unable to find element: ${selector}`);
+  }
+
   async function flushAsyncWork() {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await act(async () => {
@@ -166,3 +238,20 @@ describe("App", () => {
     }
   }
 });
+
+function createSessionSummary(sessionId: string, title: string): SessionSummary {
+  return {
+    sessionId,
+    title,
+    status: "running",
+    transport: "local_pty",
+    size: {
+      cols: 120,
+      rows: 32,
+      pixelWidth: 0,
+      pixelHeight: 0
+    },
+    createdAt: "1",
+    updatedAt: "1"
+  };
+}

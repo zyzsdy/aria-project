@@ -14,6 +14,10 @@ default_profile_badge = "既定"
 [workbench.sidebar.sessions]
 title = "セッション"
 empty = "セッションはまだありません。"
+rename = "名前を変更"
+terminate = "終了"
+rename_dialog_title = "セッション名の変更"
+rename_placeholder = "セッション名"
 
 [workbench.sidebar.collections]
 title = "コレクション"

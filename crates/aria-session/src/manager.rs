@@ -8,10 +8,10 @@ use aria_ipc::{
     AttachViewerRequest, AttachViewerResponse, BufferKind, CreateLocalSessionRequest,
     CreateLocalSessionResponse, DetachViewerRequest, EmptyResponse, ListSessionsRequest,
     ListSessionsResponse, ReadScrollbackRequest, ReadScrollbackResponse, RehydrateReason,
-    ReplayMode, ScrollbackLine, ScrollbackStats, SessionMetadata, SessionMetadataDelta,
-    SessionResizeRequest, SessionSelector, SessionSnapshot, SessionStreamFrame,
-    SessionStreamMetadata, SessionSummary, SessionWriteRequest, ViewerAckRequest,
-    ViewerDetachedReason, ViewerRole,
+    RenameSessionRequest, ReplayMode, ScrollbackLine, ScrollbackStats, SessionMetadata,
+    SessionMetadataDelta, SessionResizeRequest, SessionSelector, SessionSnapshot,
+    SessionStreamFrame, SessionStreamMetadata, SessionSummary, SessionWriteRequest,
+    ViewerAckRequest, ViewerDetachedReason, ViewerRole,
 };
 use aria_model::{SessionId, SessionStatus, TerminalSize, ViewerId};
 use aria_terminal::{TerminalEngine, Vt100TerminalEngine};
@@ -59,6 +59,7 @@ enum SessionCommand {
         oneshot::Sender<Result<ReadScrollbackResponse>>,
     ),
     Shutdown(oneshot::Sender<Result<()>>),
+    Rename(String, oneshot::Sender<Result<()>>),
     ProcessOutput(Vec<u8>),
     ProcessExit(Option<u32>),
 }
@@ -338,7 +339,12 @@ impl SessionManager {
     }
 
     pub async fn close(&self, selector: SessionSelector) -> Result<EmptyResponse> {
-        let handle = self.handle(selector.session_id).await?;
+        let handle = self
+            .sessions
+            .write()
+            .await
+            .remove(&selector.session_id)
+            .ok_or_else(|| anyhow!("unknown session {}", selector.session_id))?;
         let (reply_tx, reply_rx) = oneshot::channel();
         if handle
             .sender
@@ -346,22 +352,35 @@ impl SessionManager {
             .await
             .is_err()
         {
-            self.sessions.write().await.remove(&selector.session_id);
             return Err(anyhow!("session actor is unavailable"));
         }
         let result = match reply_rx.await {
             Ok(result) => result,
             Err(_) => {
-                self.sessions.write().await.remove(&selector.session_id);
                 return Err(anyhow!("session actor dropped"));
             }
         };
-        match result {
-            Ok(()) => {
-                self.sessions.write().await.remove(&selector.session_id);
-            }
-            Err(error) => return Err(error),
+        if let Err(error) = result {
+            self.sessions
+                .write()
+                .await
+                .insert(selector.session_id, handle);
+            return Err(error);
         }
+        Ok(EmptyResponse {})
+    }
+
+    pub async fn rename(&self, request: RenameSessionRequest) -> Result<EmptyResponse> {
+        let handle = self.handle(request.session_id).await?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        handle
+            .sender
+            .send(SessionCommand::Rename(request.title, reply_tx))
+            .await
+            .map_err(|_| anyhow!("session actor is unavailable"))?;
+        reply_rx
+            .await
+            .map_err(|_| anyhow!("session actor dropped"))??;
         Ok(EmptyResponse {})
     }
 
@@ -483,6 +502,9 @@ async fn run_session_actor(mut actor: SessionActor, mut receiver: mpsc::Receiver
                 if should_exit {
                     break;
                 }
+            }
+            SessionCommand::Rename(title, reply) => {
+                let _ = reply.send(actor.rename(title));
             }
             SessionCommand::ProcessOutput(bytes) => {
                 let normalized = normalize_terminal_output(&bytes);
@@ -618,17 +640,20 @@ impl SessionActor {
     }
 
     async fn shutdown(&mut self) -> Result<()> {
-        if matches!(
+        if !matches!(
             self.metadata.status,
             SessionStatus::Exited | SessionStatus::Closed | SessionStatus::Failed
         ) {
-            self.metadata.status = SessionStatus::Closed;
-            self.metadata.updated_at = unix_timestamp();
-        } else {
-            self.transport.shutdown().await?;
-            self.metadata.status = SessionStatus::Closed;
-            self.metadata.updated_at = unix_timestamp();
+            if let Err(error) = self.transport.shutdown().await {
+                warn!(
+                    %self.session_id,
+                    error = %error,
+                    "transport shutdown failed while closing session"
+                );
+            }
         }
+        self.metadata.status = SessionStatus::Closed;
+        self.metadata.updated_at = unix_timestamp();
         self.notify_detached(ViewerDetachedReason::SessionClosed);
         Ok(())
     }
@@ -711,6 +736,26 @@ impl SessionActor {
             process_id: None,
             exit_code: None,
         });
+    }
+
+    fn rename(&mut self, title: String) -> Result<()> {
+        if title.is_empty() {
+            return Err(anyhow!("title cannot be empty"));
+        }
+        if title == self.metadata.title {
+            return Ok(());
+        }
+        self.metadata.title = title.clone();
+        self.metadata.updated_at = unix_timestamp();
+        self.emit_metadata(SessionMetadataDelta {
+            title: Some(title),
+            status: None,
+            cwd: None,
+            shell: None,
+            process_id: None,
+            exit_code: None,
+        });
+        Ok(())
     }
 
     fn snapshot(&self) -> SessionSnapshot {
@@ -1053,11 +1098,12 @@ fn unix_timestamp() -> String {
 mod tests {
     use super::{
         cursor_position_reply, line_has_visible_text, normalize_terminal_output, run_session_actor,
-        snapshot_is_renderable, ReplayLog, SessionActor, SessionCommand,
+        snapshot_is_renderable, ReplayLog, SessionActor, SessionCommand, SessionHandle,
+        SessionManager,
     };
     use crate::scrollback::ScrollbackBuffer;
     use crate::transport::{Transport, TransportMetadata};
-    use anyhow::Result;
+    use anyhow::{anyhow, Result};
     use aria_ipc::{
         AttachViewerRequest, BufferKind, DetachViewerRequest, ReadScrollbackRequest,
         RehydrateReason, ReplayMode, ScrollbackStats, SessionMetadata, SessionSnapshot,
@@ -1075,6 +1121,16 @@ mod tests {
         metadata: TransportMetadata,
     }
 
+    struct BlockingShutdownTransport {
+        metadata: TransportMetadata,
+        shutdown_started: Option<oneshot::Sender<()>>,
+        shutdown_release: Option<oneshot::Receiver<()>>,
+    }
+
+    struct FailingShutdownTransport {
+        metadata: TransportMetadata,
+    }
+
     #[async_trait]
     impl Transport for TestTransport {
         async fn write(&mut self, _data: &[u8]) -> Result<()> {
@@ -1087,6 +1143,50 @@ mod tests {
 
         async fn shutdown(&mut self) -> Result<()> {
             Ok(())
+        }
+
+        fn metadata(&self) -> &TransportMetadata {
+            &self.metadata
+        }
+    }
+
+    #[async_trait]
+    impl Transport for BlockingShutdownTransport {
+        async fn write(&mut self, _data: &[u8]) -> Result<()> {
+            Ok(())
+        }
+
+        async fn resize(&mut self, _size: TerminalSize) -> Result<()> {
+            Ok(())
+        }
+
+        async fn shutdown(&mut self) -> Result<()> {
+            if let Some(started) = self.shutdown_started.take() {
+                let _ = started.send(());
+            }
+            if let Some(release) = self.shutdown_release.take() {
+                let _ = release.await;
+            }
+            Ok(())
+        }
+
+        fn metadata(&self) -> &TransportMetadata {
+            &self.metadata
+        }
+    }
+
+    #[async_trait]
+    impl Transport for FailingShutdownTransport {
+        async fn write(&mut self, _data: &[u8]) -> Result<()> {
+            Ok(())
+        }
+
+        async fn resize(&mut self, _size: TerminalSize) -> Result<()> {
+            Ok(())
+        }
+
+        async fn shutdown(&mut self) -> Result<()> {
+            Err(anyhow!("mock transport shutdown failure"))
         }
 
         fn metadata(&self) -> &TransportMetadata {
@@ -1136,6 +1236,74 @@ mod tests {
         let (sender, receiver) = mpsc::channel(64);
         tokio::spawn(run_session_actor(actor, receiver));
         (session_id, sender)
+    }
+
+    async fn insert_blocking_shutdown_session(
+        manager: &SessionManager,
+        size: TerminalSize,
+    ) -> (SessionId, oneshot::Receiver<()>, oneshot::Sender<()>) {
+        let session_id = SessionId::new();
+        let (shutdown_started_tx, shutdown_started_rx) = oneshot::channel();
+        let (shutdown_release_tx, shutdown_release_rx) = oneshot::channel();
+        let actor = SessionActor {
+            session_id,
+            transport: Box::new(BlockingShutdownTransport {
+                metadata: TransportMetadata {
+                    kind: SessionTransportKind::LocalPty,
+                    tty_name: None,
+                    process_id: Some(42),
+                },
+                shutdown_started: Some(shutdown_started_tx),
+                shutdown_release: Some(shutdown_release_rx),
+            }),
+            terminal: Box::new(Vt100TerminalEngine::new(size, 256)),
+            metadata: test_metadata(session_id, size),
+            scrollback: ScrollbackBuffer::new(256),
+            pending_terminal_query: Vec::new(),
+            viewers: HashMap::new(),
+            event_seq: 0,
+            replay_log: ReplayLog::new(1024),
+        };
+        let (sender, receiver) = mpsc::channel(64);
+        tokio::spawn(run_session_actor(actor, receiver));
+        manager
+            .sessions
+            .write()
+            .await
+            .insert(session_id, SessionHandle { sender });
+        (session_id, shutdown_started_rx, shutdown_release_tx)
+    }
+
+    async fn insert_failing_shutdown_session(
+        manager: &SessionManager,
+        size: TerminalSize,
+    ) -> SessionId {
+        let session_id = SessionId::new();
+        let actor = SessionActor {
+            session_id,
+            transport: Box::new(FailingShutdownTransport {
+                metadata: TransportMetadata {
+                    kind: SessionTransportKind::LocalPty,
+                    tty_name: None,
+                    process_id: Some(42),
+                },
+            }),
+            terminal: Box::new(Vt100TerminalEngine::new(size, 256)),
+            metadata: test_metadata(session_id, size),
+            scrollback: ScrollbackBuffer::new(256),
+            pending_terminal_query: Vec::new(),
+            viewers: HashMap::new(),
+            event_seq: 0,
+            replay_log: ReplayLog::new(1024),
+        };
+        let (sender, receiver) = mpsc::channel(64);
+        tokio::spawn(run_session_actor(actor, receiver));
+        manager
+            .sessions
+            .write()
+            .await
+            .insert(session_id, SessionHandle { sender });
+        session_id
     }
 
     async fn attach_test_viewer(
@@ -1468,6 +1636,50 @@ mod tests {
             }
             other => panic!("unexpected rehydrate frame: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn close_removes_session_from_registry_before_shutdown_finishes() {
+        let manager = SessionManager::new();
+        let (session_id, shutdown_started, shutdown_release) =
+            insert_blocking_shutdown_session(&manager, TerminalSize::new(80, 24)).await;
+
+        let close_task = tokio::spawn({
+            let manager = manager.clone();
+            async move {
+                manager
+                    .close(aria_ipc::SessionSelector { session_id })
+                    .await
+            }
+        });
+
+        shutdown_started
+            .await
+            .expect("shutdown should start before close finishes");
+
+        assert!(
+            !manager.sessions.read().await.contains_key(&session_id),
+            "closing session should be removed from the visible registry before transport shutdown finishes"
+        );
+
+        shutdown_release.send(()).expect("release shutdown");
+        close_task.await.expect("close task").expect("close ok");
+    }
+
+    #[tokio::test]
+    async fn close_removes_session_even_when_transport_shutdown_reports_failure() {
+        let manager = SessionManager::new();
+        let session_id = insert_failing_shutdown_session(&manager, TerminalSize::new(80, 24)).await;
+
+        manager
+            .close(aria_ipc::SessionSelector { session_id })
+            .await
+            .expect("close should remove the session even when transport shutdown reports failure");
+
+        assert!(
+            !manager.sessions.read().await.contains_key(&session_id),
+            "failed transport shutdown must not leave an exited session requiring a second close"
+        );
     }
 
     #[test]

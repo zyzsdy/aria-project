@@ -140,6 +140,13 @@ pub struct SessionResizeRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RenameSessionRequest {
+    pub session_id: SessionId,
+    pub title: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EmptyResponse {}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -792,6 +799,11 @@ pub trait SessionService: Send + Sync {
         request: SessionSelector,
     ) -> Result<EmptyResponse, ContractError>;
 
+    async fn rename_session(
+        &self,
+        request: RenameSessionRequest,
+    ) -> Result<EmptyResponse, ContractError>;
+
     async fn detach_viewer(
         &self,
         request: DetachViewerRequest,
@@ -903,6 +915,13 @@ impl DaemonClient {
         request: SessionSelector,
     ) -> Result<EmptyResponse, ClientError> {
         self.call("sessions.close", &request).await
+    }
+
+    pub async fn rename_session(
+        &self,
+        request: RenameSessionRequest,
+    ) -> Result<EmptyResponse, ClientError> {
+        self.call("sessions.rename", &request).await
     }
 
     pub async fn detach_viewer(

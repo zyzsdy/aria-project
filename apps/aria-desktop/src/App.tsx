@@ -21,6 +21,7 @@ import {
   reconcileOpenTabs,
   type WorkbenchTab
 } from "./components/workbench/main/tabState";
+import { RenameSessionDialog } from "./components/workbench/sidebar/RenameSessionDialog";
 import { SidebarHost } from "./components/workbench/sidebar/SidebarHost";
 import type { SidebarPanel } from "./components/workbench/sidebar/sidebarState";
 import { UtilityPanelHost } from "./components/workbench/utility/UtilityPanelHost";
@@ -77,6 +78,7 @@ export function App() {
   const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
   const [toolNotice, setToolNotice] = useState<ToolNotice>(null);
   const [sessionLaunchError, setSessionLaunchError] = useState<string | null>(null);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
 
   const selectedTabIdRef = useRef<string | null>(null);
   const tabsRef = useRef<WorkbenchTab[]>([]);
@@ -214,6 +216,41 @@ export function App() {
     applyTabState(closeWorkbenchTab(tabsRef.current, selectedTabIdRef.current, tabId));
   }
 
+  async function handleCloseSession(sessionId: string) {
+    const tabId = `terminal:${sessionId}`;
+    const nextTabState = closeWorkbenchTab(tabsRef.current, selectedTabIdRef.current, tabId);
+    tabsRef.current = nextTabState.tabs;
+    selectedTabIdRef.current = nextTabState.selectedTabId;
+    applyTabState(nextTabState);
+    startTransition(() => {
+      setSessions((current) => current.filter((s) => s.sessionId !== sessionId));
+    });
+    try {
+      await invoke("close_session", { sessionId });
+    } catch (error) {
+      logDesktopError(error);
+    }
+    await refreshWorkbench({ startupBehavior: "open_empty" });
+  }
+
+  function handleRenameSession(sessionId: string) {
+    setRenamingSessionId(sessionId);
+  }
+
+  async function handleRenameConfirm(newTitle: string) {
+    const sessionId = renamingSessionId;
+    if (!sessionId) {
+      return;
+    }
+    try {
+      await invoke("rename_session", { sessionId, title: newTitle });
+    } catch (error) {
+      logDesktopError(error);
+    } finally {
+      setRenamingSessionId(null);
+    }
+  }
+
   async function handleCreateSession(profileId?: string) {
     setBusy(true);
     setIsProfileMenuOpen(false);
@@ -272,6 +309,8 @@ export function App() {
         onCloseAboutDialog={() => setIsAboutDialogOpen(false)}
         onCloseToolNotice={() => setToolNotice(null)}
         onCloseTab={handleCloseTab}
+        onCloseSession={handleCloseSession}
+        onCloseRenameDialog={() => setRenamingSessionId(null)}
         onCreateSession={() => void handleCreateSession(settings.profiles.defaultProfileId)}
         onCreateSessionWithProfile={(profileId) => void handleCreateSession(profileId)}
         onOpenAbout={() => setIsAboutDialogOpen(true)}
@@ -279,6 +318,8 @@ export function App() {
         onOpenSidebarChange={setOpenSidebar}
         onProfileMenuOpenChange={setIsProfileMenuOpen}
         onRefresh={() => void refreshWorkbench()}
+        onRenameSession={handleRenameSession}
+        onRenameConfirm={handleRenameConfirm}
         onResetSettingsGroup={handleResetSettingsGroup}
         onSelectSession={handleSelectSession}
         onSelectSettingsGroup={setSelectedSettingsGroup}
@@ -297,6 +338,7 @@ export function App() {
         selectedSessionId={selectedSessionId}
         selectedSettingsGroup={selectedSettingsGroup}
         sessionLaunchError={sessionLaunchError}
+        renamingSessionId={renamingSessionId}
         sessions={sessions}
         settings={settings}
         tabs={tabs}
@@ -334,6 +376,8 @@ type AppShellProps = {
   onCloseSessionLaunchError: () => void;
   onCloseToolNotice: () => void;
   onCloseTab: (tabId: string) => void;
+  onCloseSession: (sessionId: string) => void;
+  onCloseRenameDialog: () => void;
   onCreateSession: () => void;
   onCreateSessionWithProfile: (profileId: string) => void;
   onOpenAbout: () => void;
@@ -341,6 +385,8 @@ type AppShellProps = {
   onOpenSidebarChange: (next: SidebarPanel | null) => void;
   onProfileMenuOpenChange: (next: boolean) => void;
   onRefresh: () => void;
+  onRenameSession: (sessionId: string) => void;
+  onRenameConfirm: (title: string) => void;
   onResetSettingsGroup: (group: SettingsGroup) => void;
   onSelectSession: (sessionId: string) => void;
   onSelectSettingsGroup: (group: SettingsGroup) => void;
@@ -356,6 +402,7 @@ type AppShellProps = {
   selectedSessionId: string | null;
   selectedSettingsGroup: SettingsGroup;
   sessionLaunchError: string | null;
+  renamingSessionId: string | null;
   sessions: SessionSummary[];
   settings: AppSettings;
   tabs: WorkbenchTab[];
@@ -374,6 +421,8 @@ function AppShell({
   onCloseSessionLaunchError,
   onCloseToolNotice,
   onCloseTab,
+  onCloseSession,
+  onCloseRenameDialog,
   onCreateSession,
   onCreateSessionWithProfile,
   onOpenAbout,
@@ -381,6 +430,8 @@ function AppShell({
   onOpenSidebarChange,
   onProfileMenuOpenChange,
   onRefresh,
+  onRenameSession,
+  onRenameConfirm,
   onResetSettingsGroup,
   onSelectSession,
   onSelectSettingsGroup,
@@ -396,6 +447,7 @@ function AppShell({
   selectedSessionId,
   selectedSettingsGroup,
   sessionLaunchError,
+  renamingSessionId,
   sessions,
   settings,
   tabs,
@@ -443,10 +495,12 @@ function AppShell({
           <SidebarHost
             busy={busy}
             defaultProfileId={defaultProfileId}
+            onCloseSession={onCloseSession}
             onCreateSession={onCreateSession}
             onCreateSessionWithProfile={onCreateSessionWithProfile}
             onProfileMenuOpenChange={onProfileMenuOpenChange}
             onRefresh={onRefresh}
+            onRenameSession={onRenameSession}
             onSelectSession={onSelectSession}
             openProfileMenu={isProfileMenuOpen}
             openSidebar={openSidebar}
@@ -501,6 +555,13 @@ function AppShell({
           <pre className="dialog-error-details">{sessionLaunchError ?? ""}</pre>
         </div>
       </ModalDialog>
+
+      <RenameSessionDialog
+        isOpen={renamingSessionId !== null}
+        currentTitle={sessions.find((s) => s.sessionId === renamingSessionId)?.title ?? ""}
+        onClose={onCloseRenameDialog}
+        onConfirm={onRenameConfirm}
+      />
     </div>
   );
 }

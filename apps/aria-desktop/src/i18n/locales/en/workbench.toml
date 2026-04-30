@@ -17,6 +17,10 @@ title = "Collections"
 [workbench.sidebar.sessions]
 empty = "No sessions yet."
 title = "Sessions"
+rename = "Rename"
+terminate = "Terminate"
+rename_dialog_title = "Rename Session"
+rename_placeholder = "Session name"
 
 [workbench.status]
 check_updates_unavailable = "Check for Updates is not wired up yet."
