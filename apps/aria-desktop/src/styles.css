@@ -626,6 +626,32 @@ input[type="range"] {
   min-height: 100%;
 }
 
+.tab-strip-new-session {
+  flex: 0 0 auto;
+  height: 24px;
+  margin: 4px 6px;
+  align-self: flex-start;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.tab-strip-new-session .sidebar-split-button-segment {
+  width: 24px;
+  height: 22px;
+}
+
+.tab-strip-new-session:hover,
+.tab-strip-new-session:focus-within {
+  border-color: var(--border-strong);
+}
+
+.tab-strip-profile-menu {
+  position: fixed;
+  z-index: 40;
+  right: auto;
+  min-width: 220px;
+}
+
 .tab-strip-scrollbar {
   position: absolute;
   right: 0;

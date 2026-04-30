@@ -55,4 +55,20 @@ describe("tab strip styles", () => {
       /\.tab-strip-scrollbar\s*{[^}]*z-index:\s*2;/s
     );
   });
+
+  it("keeps the tab strip new session control fixed-size inside the scroll track", () => {
+    expect(styles).toMatch(
+      /\.tab-strip-new-session\s*{[^}]*flex:\s*0\s+0\s+auto;[^}]*height:\s*24px;[^}]*margin:\s*4px\s+6px;/s
+    );
+    expect(styles).toMatch(
+      /\.tab-strip-new-session\s+\.sidebar-split-button-segment\s*{[^}]*width:\s*24px;[^}]*height:\s*22px;/s
+    );
+  });
+
+  it("positions the tab strip profile menu outside the clipped scroll viewport", () => {
+    expect(styles).toMatch(
+      /\.tab-strip-profile-menu\s*{[^}]*position:\s*fixed;[^}]*z-index:\s*40;/s
+    );
+    expect(styles).not.toMatch(/\.tab-strip-profile-menu\s*{[^}]*position:\s*absolute;/s);
+  });
 });

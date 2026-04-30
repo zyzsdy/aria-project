@@ -13,9 +13,9 @@ export const MIN_SPLIT_RATIO = 0.15;
 export const MAX_SPLIT_RATIO = 0.85;
 
 export function createEmptyProjectWorkspace(): ProjectWorkspace {
-  const paneId = createId("pane");
+  const paneId = createId();
   const project: ProjectSummary = {
-    projectId: createId("project"),
+    projectId: createId(),
     name: "Default Project",
     activePaneId: paneId,
     layout: {
@@ -71,7 +71,7 @@ export function addSessionTabToActivePane(
   const tab = {
     kind: "terminal",
     pageId: null,
-    tabId: createId("tab"),
+    tabId: createId(),
     title: session.title,
     sessionId: session.sessionId
   } satisfies ProjectTab;
@@ -112,7 +112,7 @@ export function openHtmlTabInActiveProject(
   const tab = {
     kind: "html",
     pageId,
-    tabId: createId("tab"),
+    tabId: createId(),
     title,
     sessionId: null
   } satisfies ProjectTab;
@@ -199,13 +199,13 @@ export function splitActivePane(
 
   const nextPane: ProjectPane = {
     type: "leaf",
-    paneId: createId("pane"),
+    paneId: createId(),
     activeTabId: null,
     tabs: []
   };
   const split: ProjectPaneNode = {
     type: "split",
-    splitId: createId("split"),
+    splitId: createId(),
     direction,
     ratio: 0.5,
     first: activePane,
@@ -353,10 +353,13 @@ function findFirstPaneId(node: ProjectPaneNode): string {
   return node.type === "leaf" ? node.paneId : findFirstPaneId(node.first);
 }
 
-function createId(prefix: string) {
+function createId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return `${prefix}-${crypto.randomUUID()}`;
+    return crypto.randomUUID();
   }
 
-  return `${prefix}-${Math.random().toString(36).slice(2)}`;
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    return (Number(char) ^ (random & (15 >> (Number(char) / 4)))).toString(16);
+  });
 }

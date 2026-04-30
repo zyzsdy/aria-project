@@ -8,8 +8,11 @@ import {
   openHtmlTabInActiveProject,
   selectProject,
   selectProjectTab,
+  splitActivePane,
   updateProjectLayout
 } from "./projectLayoutState";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 describe("project layout state", () => {
   it("creates one active default project with one empty pane", () => {
@@ -53,6 +56,42 @@ describe("project layout state", () => {
       expect.objectContaining({ kind: "terminal", sessionId: "session-a", title: "PowerShell" })
     ]);
     expect(activeProject.layout.activeTabId).toBe(activeProject.layout.tabs[0].tabId);
+  });
+
+  it("generates UUID ids that can be sent to the Rust project layout API", () => {
+    const workspace = addSessionTabToActivePane(createEmptyProjectWorkspace(), {
+      sessionId: "session-a",
+      title: "PowerShell"
+    });
+    const project = workspace.projects[0];
+
+    expect(project.projectId).toMatch(UUID_PATTERN);
+    expect(project.activePaneId).toMatch(UUID_PATTERN);
+    expect(project.layout.type).toBe("leaf");
+    if (project.layout.type !== "leaf") {
+      return;
+    }
+
+    expect(project.layout.paneId).toMatch(UUID_PATTERN);
+    expect(project.layout.activeTabId).toMatch(UUID_PATTERN);
+    expect(project.layout.tabs[0].tabId).toMatch(UUID_PATTERN);
+  });
+
+  it("generates UUID ids for split panes", () => {
+    const workspace = splitActivePane(createEmptyProjectWorkspace(), "horizontal");
+    const project = workspace.projects[0];
+
+    expect(project.layout.type).toBe("split");
+    if (project.layout.type !== "split") {
+      return;
+    }
+
+    expect(project.layout.splitId).toMatch(UUID_PATTERN);
+    expect(project.layout.second.type).toBe("leaf");
+    if (project.layout.second.type !== "leaf") {
+      return;
+    }
+    expect(project.layout.second.paneId).toMatch(UUID_PATTERN);
   });
 
   it("activates an existing html tab anywhere in the active project", () => {

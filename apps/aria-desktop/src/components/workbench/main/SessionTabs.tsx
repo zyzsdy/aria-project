@@ -6,7 +6,8 @@ import {
   type CSSProperties,
   type WheelEvent
 } from "react";
-import { X } from "lucide-react";
+import type { ShellProfile } from "@aria/types";
+import { ChevronDown, Plus, X } from "lucide-react";
 import { defineMessages } from "../../../i18n/messages";
 import { useT } from "../../../i18n/react";
 import { getTabStripScrollDelta, shouldHandleTabStripWheel } from "./tabStripScroll";
@@ -20,6 +21,18 @@ const SESSION_TAB_MESSAGES = defineMessages({
   closeTab: {
     key: "workbench.tabs.close_tab",
     defaultMessage: "Close {title}"
+  },
+  createSession: {
+    key: "workbench.sidebar.create_session",
+    defaultMessage: "Create session"
+  },
+  openShellProfiles: {
+    key: "workbench.sidebar.open_shell_profiles",
+    defaultMessage: "Open shell profiles"
+  },
+  defaultProfile: {
+    key: "workbench.sidebar.default_profile_badge",
+    defaultMessage: "Default"
   }
 });
 
@@ -29,16 +42,34 @@ type SessionTab = {
 };
 
 type SessionTabsProps = {
+  busy: boolean;
+  defaultProfileId: string;
+  profiles: readonly ShellProfile[];
   tabs: SessionTab[];
   selectedTabId: string | null;
+  onCreateSession: () => void;
+  onCreateSessionWithProfile: (profileId: string) => void;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
 };
 
-export function SessionTabs({ tabs, selectedTabId, onSelectTab, onCloseTab }: SessionTabsProps) {
+export function SessionTabs({
+  busy,
+  defaultProfileId,
+  profiles,
+  tabs,
+  selectedTabId,
+  onCreateSession,
+  onCreateSessionWithProfile,
+  onSelectTab,
+  onCloseTab
+}: SessionTabsProps) {
   const t = useT();
   const tabStripRef = useRef<HTMLElement | null>(null);
   const tabStripTrackRef = useRef<HTMLDivElement | null>(null);
+  const profileMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [profileMenuStyle, setProfileMenuStyle] = useState<CSSProperties>({});
   const [thumbMetrics, setThumbMetrics] = useState(() => ({
     offset: 0,
     size: 0,
@@ -107,6 +138,36 @@ export function SessionTabs({ tabs, selectedTabId, onSelectTab, onCloseTab }: Se
     syncThumbMetrics();
   }
 
+  function handleCreateSession() {
+    setIsProfileMenuOpen(false);
+    onCreateSession();
+  }
+
+  function handleToggleProfileMenu() {
+    const nextOpen = !isProfileMenuOpen;
+    setIsProfileMenuOpen(nextOpen);
+
+    if (!nextOpen) {
+      return;
+    }
+
+    const rect = profileMenuButtonRef.current?.getBoundingClientRect();
+    if (!rect) {
+      setProfileMenuStyle({});
+      return;
+    }
+
+    setProfileMenuStyle({
+      left: Math.max(0, rect.right - 220),
+      top: rect.bottom + 8
+    });
+  }
+
+  function handleCreateSessionWithProfile(profileId: string) {
+    setIsProfileMenuOpen(false);
+    onCreateSessionWithProfile(profileId);
+  }
+
   return (
     <div className="tab-strip-shell">
       <nav
@@ -135,6 +196,51 @@ export function SessionTabs({ tabs, selectedTabId, onSelectTab, onCloseTab }: Se
               </button>
             </div>
           ))}
+          <div className="sidebar-split-button tab-strip-new-session">
+            <button
+              aria-label={t(SESSION_TAB_MESSAGES.createSession)}
+              className="sidebar-split-button-segment sidebar-split-button-primary"
+              disabled={busy}
+              onClick={handleCreateSession}
+              type="button"
+            >
+              <Plus aria-hidden="true" size={14} strokeWidth={2} />
+            </button>
+            <button
+              ref={profileMenuButtonRef}
+              aria-label={t(SESSION_TAB_MESSAGES.openShellProfiles)}
+              className="sidebar-split-button-segment sidebar-split-button-toggle"
+              disabled={busy}
+              onClick={handleToggleProfileMenu}
+              type="button"
+            >
+              <ChevronDown aria-hidden="true" size={13} strokeWidth={2} />
+            </button>
+            {isProfileMenuOpen ? (
+              <div
+                className="app-menu sidebar-menu tab-strip-profile-menu"
+                role="menu"
+                style={profileMenuStyle}
+              >
+                {profiles.map((profile) => (
+                  <button
+                    key={profile.id}
+                    className="app-menu-item sidebar-menu-item"
+                    onClick={() => handleCreateSessionWithProfile(profile.id)}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <span>{profile.name}</span>
+                    {profile.id === defaultProfileId ? (
+                      <span className="sidebar-menu-badge">
+                        {t(SESSION_TAB_MESSAGES.defaultProfile)}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
       </nav>
       <div

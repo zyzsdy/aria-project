@@ -6,6 +6,7 @@ import type {
   SessionMetadataDelta,
   SessionStreamMetadata,
   SessionSummary,
+  ShellProfile,
   SettingsGroup
 } from "@aria/types";
 import { Columns2, Rows2 } from "lucide-react";
@@ -38,10 +39,15 @@ const PROJECT_WORKSPACE_MESSAGES = defineMessages({
 
 type ProjectWorkspaceViewProps = {
   activePaneId: string;
+  busy: boolean;
+  defaultProfileId: string;
   layout: ProjectPaneNode;
+  profiles: readonly ShellProfile[];
   sessions: SessionSummary[];
   settings: AppSettings;
   selectedSettingsGroup: SettingsGroup;
+  onCreateSession: () => void;
+  onCreateSessionWithProfile: (profileId: string) => void;
   onActivatePane: (paneId: string) => void;
   onCloseTab: (paneId: string, tabId: string) => void;
   onLayoutChange: (layout: ProjectPaneNode, activePaneId: string) => void;
@@ -58,10 +64,15 @@ type ProjectWorkspaceViewProps = {
 
 export function ProjectWorkspaceView({
   activePaneId,
+  busy,
+  defaultProfileId,
   layout,
+  profiles,
   sessions,
   settings,
   selectedSettingsGroup,
+  onCreateSession,
+  onCreateSessionWithProfile,
   onActivatePane,
   onCloseTab,
   onLayoutChange,
@@ -79,11 +90,16 @@ export function ProjectWorkspaceView({
     <section className="terminal-region terminal-workspace project-workspace">
       <PaneNodeView
         activePaneId={activePaneId}
+        busy={busy}
+        defaultProfileId={defaultProfileId}
         layout={layout}
+        profiles={profiles}
         rootLayout={layout}
         selectedSettingsGroup={selectedSettingsGroup}
         sessions={sessions}
         settings={settings}
+        onCreateSession={onCreateSession}
+        onCreateSessionWithProfile={onCreateSessionWithProfile}
         onActivatePane={onActivatePane}
         onCloseTab={onCloseTab}
         onLayoutChange={onLayoutChange}
@@ -107,11 +123,16 @@ type PaneNodeViewProps = ProjectWorkspaceViewProps & {
 
 function PaneNodeView({
   activePaneId,
+  busy,
+  defaultProfileId,
   layout,
+  profiles,
   rootLayout,
   selectedSettingsGroup,
   sessions,
   settings,
+  onCreateSession,
+  onCreateSessionWithProfile,
   onActivatePane,
   onCloseTab,
   onLayoutChange,
@@ -129,10 +150,15 @@ function PaneNodeView({
     return (
       <ProjectPaneView
         pane={layout}
+        busy={busy}
+        defaultProfileId={defaultProfileId}
         isActivePane={layout.paneId === activePaneId}
+        profiles={profiles}
         selectedSettingsGroup={selectedSettingsGroup}
         sessions={sessions}
         settings={settings}
+        onCreateSession={onCreateSession}
+        onCreateSessionWithProfile={onCreateSessionWithProfile}
         onActivatePane={onActivatePane}
         onCloseTab={onCloseTab}
         onResetSettingsGroup={onResetSettingsGroup}
@@ -191,11 +217,16 @@ function PaneNodeView({
     >
       <PaneNodeView
         activePaneId={activePaneId}
+        busy={busy}
+        defaultProfileId={defaultProfileId}
         layout={split.first}
+        profiles={profiles}
         rootLayout={rootLayout}
         selectedSettingsGroup={selectedSettingsGroup}
         sessions={sessions}
         settings={settings}
+        onCreateSession={onCreateSession}
+        onCreateSessionWithProfile={onCreateSessionWithProfile}
         onActivatePane={onActivatePane}
         onCloseTab={onCloseTab}
         onLayoutChange={onLayoutChange}
@@ -217,11 +248,16 @@ function PaneNodeView({
       />
       <PaneNodeView
         activePaneId={activePaneId}
+        busy={busy}
+        defaultProfileId={defaultProfileId}
         layout={split.second}
+        profiles={profiles}
         rootLayout={rootLayout}
         selectedSettingsGroup={selectedSettingsGroup}
         sessions={sessions}
         settings={settings}
+        onCreateSession={onCreateSession}
+        onCreateSessionWithProfile={onCreateSessionWithProfile}
         onActivatePane={onActivatePane}
         onCloseTab={onCloseTab}
         onLayoutChange={onLayoutChange}
@@ -240,11 +276,16 @@ function PaneNodeView({
 }
 
 type ProjectPaneViewProps = {
+  busy: boolean;
+  defaultProfileId: string;
   isActivePane: boolean;
   pane: ProjectPane;
+  profiles: readonly ShellProfile[];
   selectedSettingsGroup: SettingsGroup;
   sessions: SessionSummary[];
   settings: AppSettings;
+  onCreateSession: () => void;
+  onCreateSessionWithProfile: (profileId: string) => void;
   onActivatePane: (paneId: string) => void;
   onCloseTab: (paneId: string, tabId: string) => void;
   onResetSettingsGroup: (group: SettingsGroup) => void;
@@ -259,11 +300,16 @@ type ProjectPaneViewProps = {
 };
 
 function ProjectPaneView({
+  busy,
+  defaultProfileId,
   isActivePane,
   pane,
+  profiles,
   selectedSettingsGroup,
   sessions,
   settings,
+  onCreateSession,
+  onCreateSessionWithProfile,
   onActivatePane,
   onCloseTab,
   onResetSettingsGroup,
@@ -290,8 +336,13 @@ function ProjectPaneView({
     >
       <div className="project-pane-tabs">
         <SessionTabs
+          busy={busy}
+          defaultProfileId={defaultProfileId}
           onCloseTab={(tabId) => onCloseTab(pane.paneId, tabId)}
+          onCreateSession={onCreateSession}
+          onCreateSessionWithProfile={onCreateSessionWithProfile}
           onSelectTab={(tabId) => onSelectTab(pane.paneId, tabId)}
+          profiles={profiles}
           selectedTabId={activeTab?.tabId ?? null}
           tabs={pane.tabs.map((tab) => ({
             tabId: tab.tabId,

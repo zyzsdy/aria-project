@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   type AppSettings,
+  type CreateLocalSessionResponse,
   type PaneSplitDirection,
   type ProjectPaneNode,
   type ProjectSummary,
@@ -363,17 +364,20 @@ export function App() {
     setSessionLaunchError(null);
 
     try {
-      const created = await invoke<{ sessionId: string }>("create_local_session", {
+      const created = await invoke<CreateLocalSessionResponse>("create_local_session", {
         cols: 120,
         rows: 32,
         profileId
       });
-      await refreshWorkbench({
-        ensureSession: {
-          sessionId: created.sessionId,
-          title: created.sessionId
-        }
+      const session = created.summary;
+      startTransition(() => {
+        setSessions((current) =>
+          current.some((candidate) => candidate.sessionId === session.sessionId)
+            ? current
+            : [...current, session]
+        );
       });
+      await applyProjectWorkspace(addSessionTabToActivePane(projectWorkspaceRef.current, session));
     } catch (error) {
       setSessionLaunchError(describeDesktopError(error));
       logDesktopError(error);
@@ -669,6 +673,10 @@ function AppShell({
         ) : null}
 
         <WorkbenchMain
+          busy={busy}
+          defaultProfileId={defaultProfileId}
+          onCreateSession={onCreateSession}
+          onCreateSessionWithProfile={onCreateSessionWithProfile}
           onActivatePane={onActivatePane}
           onCloseProjectTab={onCloseProjectTab}
           onProjectLayoutChange={onProjectLayoutChange}
@@ -681,6 +689,7 @@ function AppShell({
           onStreamMetadata={onStreamMetadata}
           onStreamMetadataDelta={onStreamMetadataDelta}
           onUpdateSettings={onUpdateSettings}
+          profiles={profiles}
           projectWorkspace={projectWorkspace}
           selectedSettingsGroup={selectedSettingsGroup}
           sessions={sessions}

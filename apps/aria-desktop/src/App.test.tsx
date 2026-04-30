@@ -322,6 +322,238 @@ describe("App", () => {
     promptSpy.mockRestore();
   });
 
+  it("creates a default profile session from the active pane tab strip", async () => {
+    const settings = createPlatformDefaultSettings("windows");
+    const existingSession = createSessionSummary("session-existing", "Existing");
+    const createdSession = createSessionSummary("session-from-tab", "PowerShell");
+    let sessions: SessionSummary[] = [existingSession];
+    let workspace = createProjectWorkspace({
+      layout: {
+        type: "leaf",
+        paneId: "pane-a",
+        activeTabId: "existing-tab",
+        tabs: [
+          {
+            kind: "terminal",
+            pageId: null,
+            sessionId: "session-existing",
+            tabId: "existing-tab",
+            title: "Existing"
+          }
+        ]
+      }
+    });
+    const staleBackendWorkspace = createProjectWorkspace();
+
+    invokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
+      switch (command) {
+        case "get_app_settings":
+          return settings;
+        case "list_sessions":
+          return sessions;
+        case "get_project_workspace":
+          if (invokeMock.mock.calls.some(([calledCommand]) => calledCommand === "create_local_session")) {
+            return staleBackendWorkspace;
+          }
+          return workspace;
+        case "create_local_session":
+          expect(payload).toEqual({
+            cols: 120,
+            rows: 32,
+            profileId: settings.profiles.defaultProfileId
+          });
+          sessions = [existingSession, createdSession];
+          return { sessionId: "session-from-tab", summary: createdSession };
+        case "update_project_layout":
+          {
+            const request = payload?.request as {
+              activePaneId: string;
+              layout: ProjectWorkspace["projects"][number]["layout"];
+              projectId: string;
+            };
+            expect(request.projectId).toBe("project-a");
+            expect(request.activePaneId).toBe("pane-a");
+            expect(request.layout).toMatchObject({
+              type: "leaf",
+              paneId: "pane-a",
+              tabs: [
+                expect.objectContaining({ sessionId: "session-existing" }),
+                expect.objectContaining({ sessionId: "session-from-tab" })
+              ]
+            });
+            workspace = {
+              ...workspace,
+              projects: workspace.projects.map((project) =>
+                project.projectId === request.projectId
+                  ? {
+                      ...project,
+                      activePaneId: request.activePaneId,
+                      layout: request.layout
+                    }
+                  : project
+              )
+            };
+            return workspace;
+          }
+        default:
+          throw new Error(`Unexpected invoke command: ${command}`);
+      }
+    });
+
+    renderApp();
+    await flushAsyncWork();
+
+    const createButton = await waitForButton("Create session");
+    act(() => {
+      createButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForInvoke("update_project_layout");
+
+    expect(invokeMock).toHaveBeenCalledWith("create_local_session", {
+      cols: 120,
+      rows: 32,
+      profileId: settings.profiles.defaultProfileId
+    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "update_project_layout",
+      expect.objectContaining({
+        request: expect.objectContaining({
+          activePaneId: "pane-a",
+          projectId: "project-a"
+        })
+      })
+    );
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "get_project_workspace")
+    ).toHaveLength(1);
+  });
+
+  it("creates a selected profile session from the active pane tab strip menu", async () => {
+    const settings = createPlatformDefaultSettings("windows");
+    const customProfile = {
+      id: "custom:git-bash",
+      source: "custom" as const,
+      name: "Git Bash",
+      executable: "bash.exe",
+      args: ["--login"],
+      startupDir: "C:/work"
+    };
+    const settingsWithProfile = {
+      ...settings,
+      profiles: {
+        ...settings.profiles,
+        items: [...settings.profiles.items, customProfile]
+      }
+    };
+    let sessions: SessionSummary[] = [];
+    let workspace = createProjectWorkspace({
+      activePaneId: "pane-b",
+      layout: {
+        type: "split",
+        splitId: "split-a",
+        direction: "horizontal",
+        ratio: 0.5,
+        first: {
+          type: "leaf",
+          paneId: "pane-a",
+          activeTabId: null,
+          tabs: []
+        },
+        second: {
+          type: "leaf",
+          paneId: "pane-b",
+          activeTabId: null,
+          tabs: []
+        }
+      }
+    });
+
+    invokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
+      switch (command) {
+        case "get_app_settings":
+          return settingsWithProfile;
+        case "list_sessions":
+          return sessions;
+        case "get_project_workspace":
+          return workspace;
+        case "create_local_session":
+          expect(payload).toEqual({
+            cols: 120,
+            rows: 32,
+            profileId: "custom:git-bash"
+          });
+          {
+            const createdSession = createSessionSummary("session-from-menu", "Git Bash");
+            sessions = [createdSession];
+            return { sessionId: "session-from-menu", summary: createdSession };
+          }
+        case "update_project_layout":
+          {
+            const request = payload?.request as {
+              activePaneId: string;
+              layout: ProjectWorkspace["projects"][number]["layout"];
+              projectId: string;
+            };
+            expect(request.projectId).toBe("project-a");
+            expect(request.activePaneId).toBe("pane-b");
+            expect(request.layout).toMatchObject({
+              type: "split",
+              second: {
+                type: "leaf",
+                paneId: "pane-b",
+                tabs: [expect.objectContaining({ sessionId: "session-from-menu" })]
+              }
+            });
+            workspace = {
+              ...workspace,
+              projects: workspace.projects.map((project) =>
+                project.projectId === request.projectId
+                  ? {
+                      ...project,
+                      activePaneId: request.activePaneId,
+                      layout: request.layout
+                    }
+                  : project
+              )
+            };
+            return workspace;
+          }
+        default:
+          throw new Error(`Unexpected invoke command: ${command}`);
+      }
+    });
+
+    renderApp();
+    await flushAsyncWork();
+
+    const menuButton = await waitForButton("Open shell profiles");
+    act(() => {
+      menuButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    const profileButton = await waitForButton("Git Bash");
+    act(() => {
+      profileButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForInvoke("update_project_layout");
+
+    expect(invokeMock).toHaveBeenCalledWith("create_local_session", {
+      cols: 120,
+      rows: 32,
+      profileId: "custom:git-bash"
+    });
+    expect(invokeMock).toHaveBeenCalledWith(
+      "update_project_layout",
+      expect.objectContaining({
+        request: expect.objectContaining({
+          activePaneId: "pane-b",
+          projectId: "project-a"
+        })
+      })
+    );
+  });
+
   it("opens settings by activating an existing settings tab in the active project", async () => {
     const settings = createPlatformDefaultSettings("windows");
     const workspace = createProjectWorkspace({
@@ -446,6 +678,18 @@ describe("App", () => {
     }
 
     throw new Error(`Unable to find element: ${selector}`);
+  }
+
+  async function waitForInvoke(command: string) {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      if (invokeMock.mock.calls.some(([calledCommand]) => calledCommand === command)) {
+        return;
+      }
+
+      await flushAsyncWork();
+    }
+
+    throw new Error(`Unable to find invoke command: ${command}`);
   }
 
   function setDialogInputValue(value: string) {

@@ -6,16 +6,22 @@ import type {
   SessionMetadataDelta,
   SessionStreamMetadata,
   SessionSummary,
+  ShellProfile,
   SettingsGroup
 } from "@aria/types";
 import { ProjectWorkspaceView } from "./ProjectWorkspaceView";
 import { getActiveProject } from "./projectLayoutState";
 
 type WorkbenchMainProps = {
+  busy: boolean;
+  defaultProfileId: string;
   projectWorkspace: ProjectWorkspace;
+  profiles: readonly ShellProfile[];
   sessions: SessionSummary[];
   settings: AppSettings;
   selectedSettingsGroup: SettingsGroup;
+  onCreateSession: () => void;
+  onCreateSessionWithProfile: (profileId: string) => void;
   onStreamDetached: (sessionId: string) => void;
   onStreamError: (error: unknown) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
@@ -31,10 +37,15 @@ type WorkbenchMainProps = {
 };
 
 export function WorkbenchMain({
+  busy,
+  defaultProfileId,
   projectWorkspace,
+  profiles,
   sessions,
   settings,
   selectedSettingsGroup,
+  onCreateSession,
+  onCreateSessionWithProfile,
   onStreamDetached,
   onStreamError,
   onStreamMetadata,
@@ -56,7 +67,11 @@ export function WorkbenchMain({
         {activeProject ? (
           <ProjectWorkspaceView
             activePaneId={activeProject.activePaneId}
+            busy={busy}
+            defaultProfileId={defaultProfileId}
             layout={activeProject.layout}
+            onCreateSession={onCreateSession}
+            onCreateSessionWithProfile={onCreateSessionWithProfile}
             onActivatePane={onActivatePane}
             onCloseTab={onCloseProjectTab}
             onLayoutChange={onProjectLayoutChange}
@@ -71,6 +86,7 @@ export function WorkbenchMain({
             onUpdateSettings={onUpdateSettings}
             selectedSettingsGroup={selectedSettingsGroup}
             settings={settings}
+            profiles={profiles}
             sessions={sessions}
           />
         ) : null}

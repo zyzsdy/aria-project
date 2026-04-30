@@ -14,8 +14,12 @@ describe("WorkbenchMain", () => {
   it("renders the active project workspace", () => {
     const markup = renderToStaticMarkup(
       <WorkbenchMain
+        busy={false}
+        defaultProfileId="builtin:powershell"
         onActivatePane={() => undefined}
         onCloseProjectTab={() => undefined}
+        onCreateSession={() => undefined}
+        onCreateSessionWithProfile={() => undefined}
         onProjectLayoutChange={() => undefined}
         onStreamDetached={() => undefined}
         onStreamError={() => undefined}
@@ -26,6 +30,7 @@ describe("WorkbenchMain", () => {
         onSelectSettingsGroup={() => undefined}
         onSplitPane={() => undefined}
         onUpdateSettings={() => undefined}
+        profiles={[]}
         projectWorkspace={createWorkspace()}
         selectedSettingsGroup="appearance"
         sessions={[]}
@@ -42,8 +47,12 @@ describe("WorkbenchMain", () => {
   it("does not render a global html page overlay", () => {
     const markup = renderToStaticMarkup(
       <WorkbenchMain
+        busy={false}
+        defaultProfileId="builtin:powershell"
         onActivatePane={() => undefined}
         onCloseProjectTab={() => undefined}
+        onCreateSession={() => undefined}
+        onCreateSessionWithProfile={() => undefined}
         onProjectLayoutChange={() => undefined}
         onStreamDetached={() => undefined}
         onStreamError={() => undefined}
@@ -54,6 +63,7 @@ describe("WorkbenchMain", () => {
         onSelectSettingsGroup={() => undefined}
         onSplitPane={() => undefined}
         onUpdateSettings={() => undefined}
+        profiles={[]}
         projectWorkspace={createWorkspace()}
         selectedSettingsGroup="appearance"
         sessions={[]}
