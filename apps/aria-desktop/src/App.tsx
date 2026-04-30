@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   type AppSettings,
+  type PaneSplitDirection,
+  type ProjectPaneNode,
+  type ProjectSummary,
+  type ProjectTab,
+  type ProjectWorkspace,
   type SessionMetadataDelta,
   type SessionStreamMetadata,
   type SessionSummary,
@@ -14,14 +19,17 @@ import { ActivityRail } from "./components/workbench/ActivityRail";
 import { WorkbenchMain } from "./components/workbench/main/WorkbenchMain";
 import { getHtmlPageTitle } from "./components/workbench/main/htmlPageTitles";
 import {
-  closeWorkbenchTab,
-  createHtmlTab,
-  createTerminalTab,
-  openWorkbenchTab,
-  reconcileOpenTabs,
-  type WorkbenchTab
-} from "./components/workbench/main/tabState";
+  addSessionTabToActivePane,
+  closeProjectTab,
+  createEmptyProjectWorkspace,
+  getActiveProject,
+  openHtmlTabInActiveProject,
+  selectProject,
+  selectProjectTab,
+  splitActivePane
+} from "./components/workbench/main/projectLayoutState";
 import { RenameSessionDialog } from "./components/workbench/sidebar/RenameSessionDialog";
+import { ProjectNameDialog } from "./components/workbench/sidebar/ProjectNameDialog";
 import { SidebarHost } from "./components/workbench/sidebar/SidebarHost";
 import type { SidebarPanel } from "./components/workbench/sidebar/sidebarState";
 import { UtilityPanelHost } from "./components/workbench/utility/UtilityPanelHost";
@@ -33,6 +41,10 @@ import { DEFAULT_APP_SETTINGS, cloneSettings } from "./settings/appSettings";
 import { createSettingsStore } from "./settings/settingsStore";
 
 type ToolNotice = "check_updates_unavailable" | null;
+type ProjectNameDialogState =
+  | { mode: "create" }
+  | { mode: "rename"; projectId: string; currentName: string }
+  | null;
 
 const APP_MESSAGES = defineMessages({
   checkUpdatesUnavailable: {
@@ -66,22 +78,23 @@ const CATALOG_SOURCES = [BUNDLED_CATALOG_SOURCE] as const;
 
 export function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [tabs, setTabs] = useState<WorkbenchTab[]>([]);
-  const [selectedTabId, setSelectedTabId] = useState<string | null>(null);
+  const [projectWorkspace, setProjectWorkspace] = useState<ProjectWorkspace>(
+    createEmptyProjectWorkspace
+  );
   const [settings, setSettings] = useState<AppSettings>(cloneSettings(DEFAULT_APP_SETTINGS));
   const [selectedSettingsGroup, setSelectedSettingsGroup] =
     useState<SettingsGroup>("appearance");
   const [busy, setBusy] = useState(false);
-  const [openSidebar, setOpenSidebar] = useState<SidebarPanel | null>("sessions");
+  const [openSidebar, setOpenSidebar] = useState<SidebarPanel | null>("projects");
   const [isToolMenuOpen, setIsToolMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
   const [toolNotice, setToolNotice] = useState<ToolNotice>(null);
   const [sessionLaunchError, setSessionLaunchError] = useState<string | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [projectNameDialog, setProjectNameDialog] = useState<ProjectNameDialogState>(null);
 
-  const selectedTabIdRef = useRef<string | null>(null);
-  const tabsRef = useRef<WorkbenchTab[]>([]);
+  const projectWorkspaceRef = useRef<ProjectWorkspace>(createEmptyProjectWorkspace());
   const settingsRef = useRef<AppSettings>(cloneSettings(DEFAULT_APP_SETTINGS));
   const settingsStoreRef = useRef(
     createSettingsStore({
@@ -91,8 +104,7 @@ export function App() {
     })
   );
 
-  const activeTab = tabs.find((tab) => tab.id === selectedTabId) ?? null;
-  const selectedSessionId = activeTab?.type === "terminal" ? activeTab.sessionId : null;
+  const selectedSessionId = getSelectedSessionId(projectWorkspace, sessions);
   const systemLocale = getSystemLocale();
 
   useEffect(() => {
@@ -100,12 +112,8 @@ export function App() {
   }, [settings]);
 
   useEffect(() => {
-    tabsRef.current = tabs;
-  }, [tabs]);
-
-  useEffect(() => {
-    selectedTabIdRef.current = selectedTabId;
-  }, [selectedTabId]);
+    projectWorkspaceRef.current = projectWorkspace;
+  }, [projectWorkspace]);
 
   useEffect(() => {
     if (openSidebar !== "sessions") {
@@ -154,44 +162,38 @@ export function App() {
     };
   }, [sessions, settings.workspace.closeConfirmation]);
 
-  function applyTabState(nextTabState: { tabs: WorkbenchTab[]; selectedTabId: string | null }) {
-    setTabs(nextTabState.tabs);
-    setSelectedTabId(nextTabState.selectedTabId);
-  }
-
   async function refreshWorkbench(options?: {
-    ensureTab?: WorkbenchTab;
+    ensureSession?: Pick<SessionSummary, "sessionId" | "title">;
     startupBehavior?: AppSettings["workspace"]["startupBehavior"];
   }) {
     setBusy(true);
 
     try {
-      const nextSessions = await invoke<SessionSummary[]>("list_sessions");
-      const availableSessionIds = nextSessions.map((session) => session.sessionId);
-      const startupTab =
-        !options?.ensureTab &&
-        tabsRef.current.length === 0 &&
+      const [nextSessions, loadedWorkspace] = await Promise.all([
+        invoke<SessionSummary[]>("list_sessions"),
+        invoke<ProjectWorkspace>("get_project_workspace")
+      ]);
+      const startupSession =
+        !options?.ensureSession &&
+        projectWorkspaceHasNoTabs(projectWorkspaceRef.current) &&
         (options?.startupBehavior ?? settingsRef.current.workspace.startupBehavior) ===
           "restore_previous" &&
         nextSessions[0]
-          ? createTerminalTab(nextSessions[0].sessionId)
+          ? nextSessions[0]
           : undefined;
-      const nextTabState = reconcileOpenTabs(
-        options?.ensureTab || startupTab
-          ? openWorkbenchTab(
-              tabsRef.current,
-              selectedTabIdRef.current,
-              options?.ensureTab ?? startupTab!
-            ).tabs
-          : tabsRef.current,
-        options?.ensureTab?.id ?? startupTab?.id ?? selectedTabIdRef.current,
-        availableSessionIds
-      );
+      const sessionToEnsure = options?.ensureSession ?? startupSession;
+      const nextWorkspace = sessionToEnsure
+        ? addSessionTabToActivePane(loadedWorkspace, sessionToEnsure)
+        : loadedWorkspace;
 
       startTransition(() => {
         setSessions(nextSessions);
+        setProjectWorkspace(nextWorkspace);
       });
-      applyTabState(nextTabState);
+      projectWorkspaceRef.current = nextWorkspace;
+      if (sessionToEnsure) {
+        await persistActiveProjectLayout(nextWorkspace);
+      }
     } catch (error) {
       logDesktopError(error);
     } finally {
@@ -199,29 +201,15 @@ export function App() {
     }
   }
 
-  function handleSelectSession(sessionId: string) {
-    applyTabState(
-      openWorkbenchTab(tabsRef.current, selectedTabIdRef.current, createTerminalTab(sessionId))
-    );
-  }
-
-  function handleSelectTab(tabId: string) {
-    if (tabId === selectedTabIdRef.current) {
-      return;
+  async function applyProjectWorkspace(nextWorkspace: ProjectWorkspace, persist = true) {
+    projectWorkspaceRef.current = nextWorkspace;
+    setProjectWorkspace(nextWorkspace);
+    if (persist) {
+      await persistActiveProjectLayout(nextWorkspace);
     }
-    setSelectedTabId(tabId);
-  }
-
-  function handleCloseTab(tabId: string) {
-    applyTabState(closeWorkbenchTab(tabsRef.current, selectedTabIdRef.current, tabId));
   }
 
   async function handleCloseSession(sessionId: string) {
-    const tabId = `terminal:${sessionId}`;
-    const nextTabState = closeWorkbenchTab(tabsRef.current, selectedTabIdRef.current, tabId);
-    tabsRef.current = nextTabState.tabs;
-    selectedTabIdRef.current = nextTabState.selectedTabId;
-    applyTabState(nextTabState);
     startTransition(() => {
       setSessions((current) => current.filter((s) => s.sessionId !== sessionId));
     });
@@ -231,6 +219,124 @@ export function App() {
       logDesktopError(error);
     }
     await refreshWorkbench({ startupBehavior: "open_empty" });
+  }
+
+  async function handleSelectSession(sessionId: string) {
+    const session = sessions.find((candidate) => candidate.sessionId === sessionId);
+    if (!session) {
+      return;
+    }
+    await applyProjectWorkspace(
+      addSessionTabToActivePane(projectWorkspaceRef.current, session)
+    );
+  }
+
+  async function handleSelectProject(projectId: string) {
+    const nextWorkspace = selectProject(projectWorkspaceRef.current, projectId);
+    projectWorkspaceRef.current = nextWorkspace;
+    setProjectWorkspace(nextWorkspace);
+    try {
+      const updated = await invoke<ProjectWorkspace>("activate_project", { projectId });
+      projectWorkspaceRef.current = updated;
+      setProjectWorkspace(updated);
+    } catch (error) {
+      logDesktopError(error);
+    }
+  }
+
+  function handleCreateProject() {
+    setProjectNameDialog({ mode: "create" });
+  }
+
+  async function handleCreateProjectConfirm(name: string) {
+    try {
+      await invoke<ProjectSummary>("create_project", { name });
+      const nextWorkspace = await invoke<ProjectWorkspace>("get_project_workspace");
+      projectWorkspaceRef.current = nextWorkspace;
+      setProjectWorkspace(nextWorkspace);
+      setOpenSidebar("projects");
+      setProjectNameDialog(null);
+    } catch (error) {
+      logDesktopError(error);
+    }
+  }
+
+  function handleRenameProject(projectId: string) {
+    const project = projectWorkspaceRef.current.projects.find(
+      (candidate) => candidate.projectId === projectId
+    );
+    if (!project) {
+      return;
+    }
+
+    setProjectNameDialog({
+      mode: "rename",
+      projectId,
+      currentName: project.name
+    });
+  }
+
+  async function handleRenameProjectConfirm(projectId: string, name: string) {
+    try {
+      const nextWorkspace = await invoke<ProjectWorkspace>("rename_project", { projectId, name });
+      projectWorkspaceRef.current = nextWorkspace;
+      setProjectWorkspace(nextWorkspace);
+      setProjectNameDialog(null);
+    } catch (error) {
+      logDesktopError(error);
+    }
+  }
+
+  async function handleDeleteProject(projectId: string) {
+    try {
+      const nextWorkspace = await invoke<ProjectWorkspace>("delete_project", { projectId });
+      projectWorkspaceRef.current = nextWorkspace;
+      setProjectWorkspace(nextWorkspace);
+    } catch (error) {
+      logDesktopError(error);
+    }
+  }
+
+  async function handleActivatePane(paneId: string) {
+    const activeProject = getActiveProject(projectWorkspaceRef.current);
+    if (!activeProject || activeProject.activePaneId === paneId) {
+      return;
+    }
+    const nextWorkspace = {
+      ...projectWorkspaceRef.current,
+      projects: projectWorkspaceRef.current.projects.map((project) =>
+        project.projectId === activeProject.projectId ? { ...project, activePaneId: paneId } : project
+      )
+    };
+    await applyProjectWorkspace(nextWorkspace);
+  }
+
+  async function handleSelectProjectTab(paneId: string, tabId: string) {
+    await applyProjectWorkspace(selectProjectTab(projectWorkspaceRef.current, paneId, tabId));
+  }
+
+  async function handleCloseProjectTab(paneId: string, tabId: string) {
+    await applyProjectWorkspace(closeProjectTab(projectWorkspaceRef.current, paneId, tabId));
+  }
+
+  async function handleSplitPane(direction: PaneSplitDirection) {
+    await applyProjectWorkspace(splitActivePane(projectWorkspaceRef.current, direction));
+  }
+
+  async function handleProjectLayoutChange(layout: ProjectPaneNode, activePaneId: string) {
+    const activeProject = getActiveProject(projectWorkspaceRef.current);
+    if (!activeProject) {
+      return;
+    }
+    const nextWorkspace = {
+      ...projectWorkspaceRef.current,
+      projects: projectWorkspaceRef.current.projects.map((project) =>
+        project.projectId === activeProject.projectId
+          ? { ...project, layout, activePaneId }
+          : project
+      )
+    };
+    await applyProjectWorkspace(nextWorkspace);
   }
 
   function handleRenameSession(sessionId: string) {
@@ -262,7 +368,12 @@ export function App() {
         rows: 32,
         profileId
       });
-      await refreshWorkbench({ ensureTab: createTerminalTab(created.sessionId) });
+      await refreshWorkbench({
+        ensureSession: {
+          sessionId: created.sessionId,
+          title: created.sessionId
+        }
+      });
     } catch (error) {
       setSessionLaunchError(describeDesktopError(error));
       logDesktopError(error);
@@ -287,9 +398,9 @@ export function App() {
     }
   }
 
-  function handleOpenSettingsTab(title: string) {
-    applyTabState(
-      openWorkbenchTab(tabsRef.current, selectedTabIdRef.current, createHtmlTab("settings", title))
+  async function handleOpenSettingsTab(title: string) {
+    await applyProjectWorkspace(
+      openHtmlTabInActiveProject(projectWorkspaceRef.current, "settings", title)
     );
   }
 
@@ -301,29 +412,39 @@ export function App() {
       systemLocale={systemLocale}
     >
       <AppShell
-        activeTab={activeTab}
         busy={busy}
         isAboutDialogOpen={isAboutDialogOpen}
         isToolMenuOpen={isToolMenuOpen}
         onCheckForUpdates={() => setToolNotice("check_updates_unavailable")}
         onCloseAboutDialog={() => setIsAboutDialogOpen(false)}
         onCloseToolNotice={() => setToolNotice(null)}
-        onCloseTab={handleCloseTab}
+        onActivatePane={(paneId) => void handleActivatePane(paneId)}
+        onCloseProjectTab={(paneId, tabId) => void handleCloseProjectTab(paneId, tabId)}
         onCloseSession={handleCloseSession}
         onCloseRenameDialog={() => setRenamingSessionId(null)}
+        onCloseProjectNameDialog={() => setProjectNameDialog(null)}
+        onConfirmProjectName={(name) => void handleProjectNameConfirm(name)}
+        onCreateProject={handleCreateProject}
         onCreateSession={() => void handleCreateSession(settings.profiles.defaultProfileId)}
         onCreateSessionWithProfile={(profileId) => void handleCreateSession(profileId)}
+        onDeleteProject={(projectId) => void handleDeleteProject(projectId)}
         onOpenAbout={() => setIsAboutDialogOpen(true)}
         onOpenSettingsTab={handleOpenSettingsTab}
         onOpenSidebarChange={setOpenSidebar}
         onProfileMenuOpenChange={setIsProfileMenuOpen}
         onRefresh={() => void refreshWorkbench()}
+        onProjectLayoutChange={(layout, activePaneId) =>
+          void handleProjectLayoutChange(layout, activePaneId)
+        }
+        onRenameProject={handleRenameProject}
         onRenameSession={handleRenameSession}
         onRenameConfirm={handleRenameConfirm}
         onResetSettingsGroup={handleResetSettingsGroup}
+        onSelectProject={(projectId) => void handleSelectProject(projectId)}
+        onSelectProjectTab={(paneId, tabId) => void handleSelectProjectTab(paneId, tabId)}
         onSelectSession={handleSelectSession}
         onSelectSettingsGroup={setSelectedSettingsGroup}
-        onSelectTab={handleSelectTab}
+        onSplitPane={(direction) => void handleSplitPane(direction)}
         onStreamDetached={handleStreamDetached}
         onStreamError={logDesktopError}
         onStreamMetadata={handleStreamMetadata}
@@ -335,13 +456,14 @@ export function App() {
         onUpdateSettings={(next) => void handleUpdateSettings(next)}
         openSidebar={openSidebar}
         profiles={settings.profiles.items}
+        projectWorkspace={projectWorkspace}
         selectedSessionId={selectedSessionId}
         selectedSettingsGroup={selectedSettingsGroup}
         sessionLaunchError={sessionLaunchError}
+        projectNameDialog={projectNameDialog}
         renamingSessionId={renamingSessionId}
         sessions={sessions}
         settings={settings}
-        tabs={tabs}
         toolNotice={toolNotice}
       />
     </I18nProvider>
@@ -362,10 +484,22 @@ export function App() {
   function handleStreamDetached(_sessionId: string) {
     void refreshWorkbench();
   }
+
+  async function handleProjectNameConfirm(name: string) {
+    if (!projectNameDialog) {
+      return;
+    }
+
+    if (projectNameDialog.mode === "create") {
+      await handleCreateProjectConfirm(name);
+      return;
+    }
+
+    await handleRenameProjectConfirm(projectNameDialog.projectId, name);
+  }
 }
 
 type AppShellProps = {
-  activeTab: WorkbenchTab | null;
   busy: boolean;
   defaultProfileId: string;
   isAboutDialogOpen: boolean;
@@ -373,24 +507,33 @@ type AppShellProps = {
   isToolMenuOpen: boolean;
   onCheckForUpdates: () => void;
   onCloseAboutDialog: () => void;
+  onCloseProjectNameDialog: () => void;
   onCloseSessionLaunchError: () => void;
   onCloseToolNotice: () => void;
-  onCloseTab: (tabId: string) => void;
+  onActivatePane: (paneId: string) => void;
+  onCloseProjectTab: (paneId: string, tabId: string) => void;
   onCloseSession: (sessionId: string) => void;
   onCloseRenameDialog: () => void;
+  onConfirmProjectName: (name: string) => void;
+  onCreateProject: () => void;
   onCreateSession: () => void;
   onCreateSessionWithProfile: (profileId: string) => void;
+  onDeleteProject: (projectId: string) => void;
   onOpenAbout: () => void;
   onOpenSettingsTab: (title: string) => void;
   onOpenSidebarChange: (next: SidebarPanel | null) => void;
   onProfileMenuOpenChange: (next: boolean) => void;
   onRefresh: () => void;
+  onProjectLayoutChange: (layout: ProjectPaneNode, activePaneId: string) => void;
+  onRenameProject: (projectId: string) => void;
   onRenameSession: (sessionId: string) => void;
   onRenameConfirm: (title: string) => void;
   onResetSettingsGroup: (group: SettingsGroup) => void;
+  onSelectProject: (projectId: string) => void;
+  onSelectProjectTab: (paneId: string, tabId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSelectSettingsGroup: (group: SettingsGroup) => void;
-  onSelectTab: (tabId: string) => void;
+  onSplitPane: (direction: PaneSplitDirection) => void;
   onStreamDetached: (sessionId: string) => void;
   onStreamError: (error: unknown) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
@@ -399,18 +542,18 @@ type AppShellProps = {
   onUpdateSettings: (next: Partial<AppSettings>) => void;
   openSidebar: SidebarPanel | null;
   profiles: AppSettings["profiles"]["items"];
+  projectWorkspace: ProjectWorkspace;
   selectedSessionId: string | null;
   selectedSettingsGroup: SettingsGroup;
   sessionLaunchError: string | null;
+  projectNameDialog: ProjectNameDialogState;
   renamingSessionId: string | null;
   sessions: SessionSummary[];
   settings: AppSettings;
-  tabs: WorkbenchTab[];
   toolNotice: ToolNotice;
 };
 
 function AppShell({
-  activeTab,
   busy,
   defaultProfileId,
   isAboutDialogOpen,
@@ -418,24 +561,33 @@ function AppShell({
   isToolMenuOpen,
   onCheckForUpdates,
   onCloseAboutDialog,
+  onCloseProjectNameDialog,
   onCloseSessionLaunchError,
   onCloseToolNotice,
-  onCloseTab,
+  onActivatePane,
+  onCloseProjectTab,
   onCloseSession,
   onCloseRenameDialog,
+  onConfirmProjectName,
+  onCreateProject,
   onCreateSession,
   onCreateSessionWithProfile,
+  onDeleteProject,
   onOpenAbout,
   onOpenSettingsTab,
   onOpenSidebarChange,
   onProfileMenuOpenChange,
   onRefresh,
+  onProjectLayoutChange,
+  onRenameProject,
   onRenameSession,
   onRenameConfirm,
   onResetSettingsGroup,
+  onSelectProject,
+  onSelectProjectTab,
   onSelectSession,
   onSelectSettingsGroup,
-  onSelectTab,
+  onSplitPane,
   onStreamDetached,
   onStreamError,
   onStreamMetadata,
@@ -444,13 +596,14 @@ function AppShell({
   onUpdateSettings,
   openSidebar,
   profiles,
+  projectWorkspace,
   selectedSessionId,
   selectedSettingsGroup,
   sessionLaunchError,
+  projectNameDialog,
   renamingSessionId,
   sessions,
   settings,
-  tabs,
   toolNotice
 }: AppShellProps) {
   const t = useT();
@@ -496,35 +649,42 @@ function AppShell({
             busy={busy}
             defaultProfileId={defaultProfileId}
             onCloseSession={onCloseSession}
+            onCreateProject={onCreateProject}
             onCreateSession={onCreateSession}
             onCreateSessionWithProfile={onCreateSessionWithProfile}
+            onDeleteProject={onDeleteProject}
             onProfileMenuOpenChange={onProfileMenuOpenChange}
             onRefresh={onRefresh}
+            onRenameProject={onRenameProject}
             onRenameSession={onRenameSession}
+            onSelectProject={onSelectProject}
             onSelectSession={onSelectSession}
             openProfileMenu={isProfileMenuOpen}
             openSidebar={openSidebar}
             profiles={profiles}
+            projectWorkspace={projectWorkspace}
             selectedSessionId={selectedSessionId}
             sessions={sessions}
           />
         ) : null}
 
         <WorkbenchMain
-          activeTab={activeTab}
-          onCloseTab={onCloseTab}
+          onActivatePane={onActivatePane}
+          onCloseProjectTab={onCloseProjectTab}
+          onProjectLayoutChange={onProjectLayoutChange}
           onResetSettingsGroup={onResetSettingsGroup}
+          onSelectProjectTab={onSelectProjectTab}
           onSelectSettingsGroup={onSelectSettingsGroup}
-          onSelectTab={onSelectTab}
+          onSplitPane={onSplitPane}
           onStreamDetached={onStreamDetached}
           onStreamError={onStreamError}
           onStreamMetadata={onStreamMetadata}
           onStreamMetadataDelta={onStreamMetadataDelta}
           onUpdateSettings={onUpdateSettings}
+          projectWorkspace={projectWorkspace}
           selectedSettingsGroup={selectedSettingsGroup}
           sessions={sessions}
           settings={settings}
-          tabs={tabs}
         />
         <UtilityPanelHost isVisible={false} />
       </main>
@@ -539,6 +699,13 @@ function AppShell({
       ) : null}
 
       <AboutDialog isOpen={isAboutDialogOpen} onClose={onCloseAboutDialog} />
+      <ProjectNameDialog
+        currentName={projectNameDialog?.mode === "rename" ? projectNameDialog.currentName : ""}
+        isOpen={projectNameDialog !== null}
+        mode={projectNameDialog?.mode ?? "create"}
+        onClose={onCloseProjectNameDialog}
+        onConfirm={onConfirmProjectName}
+      />
       <ModalDialog
         footer={
           <button className="settings-reset-button" onClick={onCloseSessionLaunchError} type="button">
@@ -581,6 +748,59 @@ function getSystemLocale() {
   }
 
   return navigator.languages?.[0] ?? navigator.language;
+}
+
+async function persistActiveProjectLayout(workspace: ProjectWorkspace) {
+  const activeProject = getActiveProject(workspace);
+  if (!activeProject) {
+    return;
+  }
+
+  await invoke("update_project_layout", {
+    request: {
+      projectId: activeProject.projectId,
+      activePaneId: activeProject.activePaneId,
+      layout: activeProject.layout
+    }
+  });
+}
+
+function projectWorkspaceHasNoTabs(workspace: ProjectWorkspace) {
+  return workspace.projects.every((project) => paneTabCount(project.layout) === 0);
+}
+
+function paneTabCount(node: ProjectPaneNode): number {
+  if (node.type === "leaf") {
+    return node.tabs.length;
+  }
+
+  return paneTabCount(node.first) + paneTabCount(node.second);
+}
+
+function getSelectedSessionId(workspace: ProjectWorkspace, sessions: SessionSummary[]) {
+  const activeProject = getActiveProject(workspace);
+  if (!activeProject) {
+    return null;
+  }
+  const activeTab = findActiveProjectTab(activeProject.layout, activeProject.activePaneId);
+  if (!activeTab?.sessionId) {
+    return null;
+  }
+
+  return sessions.some((session) => session.sessionId === activeTab.sessionId)
+    ? activeTab.sessionId
+    : null;
+}
+
+function findActiveProjectTab(node: ProjectPaneNode, paneId: string): ProjectTab | null {
+  if (node.type === "leaf") {
+    if (node.paneId !== paneId) {
+      return null;
+    }
+    return node.tabs.find((tab) => tab.tabId === node.activeTabId) ?? node.tabs[0] ?? null;
+  }
+
+  return findActiveProjectTab(node.first, paneId) ?? findActiveProjectTab(node.second, paneId);
 }
 
 function patchSessionMetadata(

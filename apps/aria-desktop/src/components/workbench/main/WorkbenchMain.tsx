@@ -1,20 +1,18 @@
 import type {
   AppSettings,
+  PaneSplitDirection,
+  ProjectPaneNode,
+  ProjectWorkspace,
   SessionMetadataDelta,
   SessionStreamMetadata,
   SessionSummary,
   SettingsGroup
 } from "@aria/types";
-import { useT } from "../../../i18n/react";
-import { HtmlTabHost } from "./HtmlTabHost";
-import { getHtmlPageTitle } from "./htmlPageTitles";
-import { SessionTabs } from "./SessionTabs";
-import { TerminalWorkspace } from "./TerminalWorkspace";
-import type { TerminalTab, WorkbenchTab } from "./tabState";
+import { ProjectWorkspaceView } from "./ProjectWorkspaceView";
+import { getActiveProject } from "./projectLayoutState";
 
 type WorkbenchMainProps = {
-  tabs: WorkbenchTab[];
-  activeTab: WorkbenchTab | null;
+  projectWorkspace: ProjectWorkspace;
   sessions: SessionSummary[];
   settings: AppSettings;
   selectedSettingsGroup: SettingsGroup;
@@ -22,16 +20,18 @@ type WorkbenchMainProps = {
   onStreamError: (error: unknown) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
   onStreamMetadataDelta: (sessionId: string, delta: SessionMetadataDelta) => void;
-  onSelectTab: (tabId: string) => void;
-  onCloseTab: (tabId: string) => void;
+  onActivatePane: (paneId: string) => void;
+  onCloseProjectTab: (paneId: string, tabId: string) => void;
+  onProjectLayoutChange: (layout: ProjectPaneNode, activePaneId: string) => void;
+  onSelectProjectTab: (paneId: string, tabId: string) => void;
+  onSplitPane: (direction: PaneSplitDirection) => void;
   onSelectSettingsGroup: (group: SettingsGroup) => void;
   onUpdateSettings: (next: Partial<AppSettings>) => void;
   onResetSettingsGroup: (group: SettingsGroup) => void;
 };
 
 export function WorkbenchMain({
-  tabs,
-  activeTab,
+  projectWorkspace,
   sessions,
   settings,
   selectedSettingsGroup,
@@ -39,58 +39,40 @@ export function WorkbenchMain({
   onStreamError,
   onStreamMetadata,
   onStreamMetadataDelta,
-  onSelectTab,
-  onCloseTab,
+  onActivatePane,
+  onCloseProjectTab,
+  onProjectLayoutChange,
+  onSelectProjectTab,
+  onSplitPane,
   onSelectSettingsGroup,
   onUpdateSettings,
   onResetSettingsGroup
 }: WorkbenchMainProps) {
-  const t = useT();
-  const terminalTabs = tabs.filter((tab): tab is TerminalTab => tab.type === "terminal");
-  const htmlTab = activeTab?.type === "html" ? activeTab : null;
-  const showTerminalWorkspace = terminalTabs.length > 0 || !htmlTab;
+  const activeProject = getActiveProject(projectWorkspace);
 
   return (
     <section className="main-shell">
-      <SessionTabs
-        onCloseTab={onCloseTab}
-        onSelectTab={onSelectTab}
-        selectedTabId={activeTab?.id ?? null}
-        tabs={tabs.map((tab) => ({
-          tabId: tab.id,
-          title:
-            tab.type === "terminal"
-              ? sessions.find((session) => session.sessionId === tab.sessionId)?.title ??
-                tab.sessionId
-              : getHtmlPageTitle(tab.pageId, t)
-        }))}
-      />
-
       <section className="main-content-shell">
-        {showTerminalWorkspace ? (
-          <TerminalWorkspace
-            activeTabId={activeTab?.type === "terminal" ? activeTab.id : null}
+        {activeProject ? (
+          <ProjectWorkspaceView
+            activePaneId={activeProject.activePaneId}
+            layout={activeProject.layout}
+            onActivatePane={onActivatePane}
+            onCloseTab={onCloseProjectTab}
+            onLayoutChange={onProjectLayoutChange}
+            onResetSettingsGroup={onResetSettingsGroup}
+            onSelectTab={onSelectProjectTab}
+            onSelectSettingsGroup={onSelectSettingsGroup}
+            onSplitPane={onSplitPane}
             onStreamDetached={onStreamDetached}
             onStreamError={onStreamError}
             onStreamMetadata={onStreamMetadata}
             onStreamMetadataDelta={onStreamMetadataDelta}
+            onUpdateSettings={onUpdateSettings}
+            selectedSettingsGroup={selectedSettingsGroup}
             settings={settings}
-            tabs={terminalTabs}
-            visibility={htmlTab ? "hidden" : "visible"}
+            sessions={sessions}
           />
-        ) : null}
-
-        {htmlTab ? (
-          <div className="html-tab-layer">
-            <HtmlTabHost
-              onResetSettingsGroup={onResetSettingsGroup}
-              onSelectSettingsGroup={onSelectSettingsGroup}
-              onUpdateSettings={onUpdateSettings}
-              pageId={htmlTab.pageId}
-              selectedSettingsGroup={selectedSettingsGroup}
-              settings={settings}
-            />
-          </div>
         ) : null}
       </section>
     </section>

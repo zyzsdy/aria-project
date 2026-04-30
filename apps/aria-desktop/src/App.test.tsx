@@ -3,7 +3,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionSummary } from "@aria/types";
+import type { ProjectWorkspace, SessionSummary } from "@aria/types";
 import { createPlatformDefaultSettings } from "./settings/appSettings";
 
 const { invokeMock } = vi.hoisted(() => ({
@@ -99,6 +99,8 @@ describe("App", () => {
               items: [...settings.profiles.items, brokenProfile]
             }
           };
+        case "get_project_workspace":
+          return createProjectWorkspace();
         case "list_sessions":
           return [];
         case "create_local_session":
@@ -115,6 +117,7 @@ describe("App", () => {
 
     renderApp();
     await flushAsyncWork();
+    await openSessionsSidebar();
 
     const menuButton = await waitForButton("Open shell profiles");
     act(() => {
@@ -136,10 +139,11 @@ describe("App", () => {
     );
   });
 
-  it("removes a terminated sidebar session and its tab before close_session resolves", async () => {
+  it("removes a terminated sidebar session while preserving the project tab placeholder", async () => {
     const settings = createPlatformDefaultSettings("windows");
     const session = createSessionSummary("session-a", "Alpha");
     let sessions: SessionSummary[] = [session];
+    let workspace = createProjectWorkspace();
     let resolveCloseSession: () => void = () => undefined;
     const closeSessionPromise = new Promise<void>((resolve) => {
       resolveCloseSession = resolve;
@@ -149,6 +153,29 @@ describe("App", () => {
       switch (command) {
         case "get_app_settings":
           return settings;
+        case "get_project_workspace":
+          return workspace;
+        case "update_project_layout":
+          {
+            const request = payload?.request as {
+              activePaneId: string;
+              layout: ProjectWorkspace["projects"][number]["layout"];
+              projectId: string;
+            };
+          workspace = {
+            ...workspace,
+            projects: workspace.projects.map((project) =>
+              project.projectId === request.projectId
+                ? {
+                    ...project,
+                    activePaneId: request.activePaneId,
+                    layout: request.layout
+                  }
+                : project
+            )
+          };
+          return workspace;
+          }
         case "list_sessions":
           return sessions;
         case "close_session":
@@ -160,6 +187,8 @@ describe("App", () => {
     });
 
     renderApp();
+    await flushAsyncWork();
+    await openSessionsSidebar();
     await waitForElement(".sidebar-tree-row");
     expect(container?.textContent).toContain("Alpha");
 
@@ -178,7 +207,8 @@ describe("App", () => {
 
     expect(invokeMock).toHaveBeenCalledWith("close_session", { sessionId: "session-a" });
     expect(container?.querySelector(".sidebar-tree-row")).toBeNull();
-    expect(container?.textContent).not.toContain("Alpha");
+    expect(container?.textContent).toContain("Session unavailable");
+    expect(container?.textContent).toContain("Alpha");
 
     sessions = [];
     resolveCloseSession();
@@ -187,7 +217,195 @@ describe("App", () => {
     expect(invokeMock.mock.calls.filter(([command]) => command === "close_session")).toHaveLength(
       1
     );
-    expect(container?.textContent).not.toContain("Alpha");
+    expect(container?.textContent).toContain("Session unavailable");
+  });
+
+  it("uses app dialogs instead of window prompts for creating and renaming projects", async () => {
+    const settings = createPlatformDefaultSettings("windows");
+    let workspace = createProjectWorkspace();
+    const promptSpy = vi.spyOn(window, "prompt").mockImplementation(() => {
+      throw new Error("window.prompt should not be used");
+    });
+
+    invokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
+      switch (command) {
+        case "get_app_settings":
+          return settings;
+        case "list_sessions":
+          return [];
+        case "get_project_workspace":
+          return workspace;
+        case "create_project":
+          expect(payload).toEqual({ name: "Client Work" });
+          workspace = {
+            activeProjectId: "project-b",
+            projects: [
+              ...workspace.projects,
+              {
+                projectId: "project-b",
+                name: "Client Work",
+                activePaneId: "pane-b",
+                layout: {
+                  type: "leaf",
+                  paneId: "pane-b",
+                  activeTabId: null,
+                  tabs: []
+                }
+              }
+            ]
+          };
+          return workspace.projects[1];
+        case "rename_project":
+          expect(payload).toEqual({ projectId: "project-a", name: "Renamed Project" });
+          workspace = {
+            ...workspace,
+            projects: workspace.projects.map((project) =>
+              project.projectId === "project-a"
+                ? { ...project, name: "Renamed Project" }
+                : project
+            )
+          };
+          return workspace;
+        default:
+          throw new Error(`Unexpected invoke command: ${command}`);
+      }
+    });
+
+    renderApp();
+    await flushAsyncWork();
+
+    const createButton = await waitForButton("Create project");
+    act(() => {
+      createButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    let dialog = await waitForElement('[role="dialog"]');
+    expect(dialog.textContent).toContain("Create project");
+    setDialogInputValue("Client Work");
+    const createConfirm = await waitForButton("Create");
+    act(() => {
+      createConfirm.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    expect(invokeMock).toHaveBeenCalledWith("create_project", { name: "Client Work" });
+    expect(promptSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      container
+        ?.querySelector(".project-row")
+        ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    const renameMenuItem = await waitForButton("Rename");
+    act(() => {
+      renameMenuItem.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    dialog = await waitForElement('[role="dialog"]');
+    expect(dialog.textContent).toContain("Rename project");
+    setDialogInputValue("Renamed Project");
+    const renameConfirm = await waitForButton("Rename");
+    act(() => {
+      renameConfirm.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    expect(invokeMock).toHaveBeenCalledWith("rename_project", {
+      projectId: "project-a",
+      name: "Renamed Project"
+    });
+    expect(promptSpy).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
+
+  it("opens settings by activating an existing settings tab in the active project", async () => {
+    const settings = createPlatformDefaultSettings("windows");
+    const workspace = createProjectWorkspace({
+      activePaneId: "pane-a",
+      layout: {
+        type: "split",
+        splitId: "split-a",
+        direction: "horizontal",
+        ratio: 0.5,
+        first: {
+          type: "leaf",
+          paneId: "pane-a",
+          activeTabId: null,
+          tabs: []
+        },
+        second: {
+          type: "leaf",
+          paneId: "pane-b",
+          activeTabId: null,
+          tabs: [
+            {
+              kind: "html",
+              pageId: "settings",
+              sessionId: null,
+              tabId: "settings-tab",
+              title: "Settings"
+            }
+          ]
+        }
+      }
+    });
+
+    invokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
+      switch (command) {
+        case "get_app_settings":
+          return settings;
+        case "list_sessions":
+          return [];
+        case "get_project_workspace":
+          return workspace;
+        case "update_project_layout":
+          expect(payload).toMatchObject({
+            request: {
+              projectId: "project-a",
+              activePaneId: "pane-b"
+            }
+          });
+          expect(
+            (payload?.request as { layout: ProjectWorkspace["projects"][number]["layout"] }).layout
+          ).toMatchObject({
+            type: "split",
+            second: {
+              activeTabId: "settings-tab"
+            }
+          });
+          return workspace;
+        default:
+          throw new Error(`Unexpected invoke command: ${command}`);
+      }
+    });
+
+    renderApp();
+    await flushAsyncWork();
+
+    const menuButton = await waitForButton("Open menu");
+    act(() => {
+      menuButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    const settingsButton = await waitForButton("Settings");
+    act(() => {
+      settingsButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      "update_project_layout",
+      expect.objectContaining({
+        request: expect.objectContaining({
+          activePaneId: "pane-b"
+        })
+      })
+    );
   });
 
   function renderApp() {
@@ -230,6 +448,27 @@ describe("App", () => {
     throw new Error(`Unable to find element: ${selector}`);
   }
 
+  function setDialogInputValue(value: string) {
+    const input = container?.querySelector('[role="dialog"] input');
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error("Unable to find dialog input");
+    }
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      valueSetter?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  async function openSessionsSidebar() {
+    const sessionsButton = await waitForButton("Sessions");
+    act(() => {
+      sessionsButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsyncWork();
+  }
+
   async function flushAsyncWork() {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await act(async () => {
@@ -253,5 +492,27 @@ function createSessionSummary(sessionId: string, title: string): SessionSummary 
     },
     createdAt: "1",
     updatedAt: "1"
+  };
+}
+
+function createProjectWorkspace(
+  overrides: Partial<ProjectWorkspace["projects"][number]> = {}
+): ProjectWorkspace {
+  return {
+    activeProjectId: "project-a",
+    projects: [
+      {
+        projectId: "project-a",
+        name: "Default Project",
+        activePaneId: "pane-a",
+        layout: {
+          type: "leaf",
+          paneId: "pane-a",
+          activeTabId: null,
+          tabs: []
+        },
+        ...overrides
+      }
+    ]
   };
 }

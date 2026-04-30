@@ -37,6 +37,9 @@ export const BELL_MODES = ["off", "visual", "system"] as const;
 export const STARTUP_BEHAVIORS = ["open_empty", "restore_previous"] as const;
 export const CLOSE_CONFIRMATIONS = ["never", "confirm_running_sessions"] as const;
 export const PROFILE_SOURCES = ["builtin", "custom"] as const;
+export const PANE_SPLIT_DIRECTIONS = ["horizontal", "vertical"] as const;
+export const HTML_PAGE_IDS = ["settings"] as const;
+export const PROJECT_TAB_KINDS = ["terminal", "html"] as const;
 export const SETTINGS_GROUPS = [
   "appearance",
   "terminal",
@@ -65,6 +68,9 @@ export type StartupBehavior = (typeof STARTUP_BEHAVIORS)[number];
 export type CloseConfirmation = (typeof CLOSE_CONFIRMATIONS)[number];
 export type ProfileSource = (typeof PROFILE_SOURCES)[number];
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
+export type PaneSplitDirection = (typeof PANE_SPLIT_DIRECTIONS)[number];
+export type HtmlPageId = (typeof HTML_PAGE_IDS)[number];
+export type ProjectTabKind = (typeof PROJECT_TAB_KINDS)[number];
 
 export interface AppInfo {
   readonly name: string;
@@ -119,6 +125,50 @@ export interface SessionSummary {
   readonly size: TerminalSize;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+export interface ProjectTab {
+  readonly kind: ProjectTabKind;
+  readonly pageId: HtmlPageId | null;
+  readonly tabId: string;
+  readonly title: string;
+  readonly sessionId: string | null;
+}
+
+export interface ProjectPane {
+  readonly type: "leaf";
+  readonly paneId: string;
+  readonly activeTabId: string | null;
+  readonly tabs: readonly ProjectTab[];
+}
+
+export interface ProjectPaneSplit {
+  readonly type: "split";
+  readonly splitId: string;
+  readonly direction: PaneSplitDirection;
+  readonly ratio: number;
+  readonly first: ProjectPaneNode;
+  readonly second: ProjectPaneNode;
+}
+
+export type ProjectPaneNode = ProjectPane | ProjectPaneSplit;
+
+export interface ProjectSummary {
+  readonly projectId: string;
+  readonly name: string;
+  readonly activePaneId: string;
+  readonly layout: ProjectPaneNode;
+}
+
+export interface ProjectWorkspace {
+  readonly activeProjectId: string;
+  readonly projects: readonly ProjectSummary[];
+}
+
+export interface UpdateProjectLayoutRequest {
+  readonly projectId: string;
+  readonly activePaneId: string;
+  readonly layout: ProjectPaneNode;
 }
 
 export interface AppearanceSettings {

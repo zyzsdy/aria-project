@@ -1,5 +1,6 @@
 [workbench.activity_rail]
 aria_label = "工作台分区"
+projects = "项目"
 sessions = "会话"
 collections = "集合"
 open_menu = "打开菜单"
@@ -10,6 +11,26 @@ refresh_sessions = "刷新会话"
 create_session = "创建会话"
 open_shell_profiles = "打开 shell 配置菜单"
 default_profile_badge = "默认"
+
+[workbench.sidebar.projects]
+title = "项目"
+create = "创建项目"
+
+[workbench.projects]
+branch_placeholder = "git 分支等待 shell 集成"
+create = "创建"
+create_dialog_title = "创建项目"
+cwd_placeholder = "活动目录等待 shell 集成"
+delete = "删除"
+empty_pane = "此分屏没有标签页"
+empty_session = "没有激活会话"
+name_placeholder = "项目名称"
+name_prompt = "项目名称"
+rename = "重命名"
+rename_dialog_title = "重命名项目"
+session_unavailable = "会话不可用"
+split_horizontal = "横向分屏"
+split_vertical = "纵向分屏"
 
 [workbench.sidebar.sessions]
 title = "会话"

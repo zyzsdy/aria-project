@@ -1,150 +1,87 @@
-import { DEFAULT_APP_SETTINGS } from "@aria/types";
+import { DEFAULT_APP_SETTINGS, type ProjectWorkspace } from "@aria/types";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("./TerminalWorkspace", () => ({
-  TerminalWorkspace: ({
-    activeTabId,
-    tabs,
-    visibility
-  }: {
-    activeTabId: string | null;
-    tabs: Array<{ id: string; sessionId: string }>;
-    visibility: "visible" | "hidden";
-  }) => (
-    <section className="terminal-workspace" data-terminal-workspace-visibility={visibility}>
-      {tabs.map((tab) => (
-        <div
-          key={tab.id}
-          className="terminal-surface"
-          data-session-id={tab.sessionId}
-          data-terminal-active={String(tab.id === activeTabId && visibility === "visible")}
-        />
-      ))}
-    </section>
+vi.mock("./ProjectWorkspaceView", () => ({
+  ProjectWorkspaceView: ({ activePaneId }: { activePaneId: string }) => (
+    <section className="project-workspace" data-active-pane-id={activePaneId} />
   )
 }));
 
 import { WorkbenchMain } from "./WorkbenchMain";
-import { createHtmlTab, createTerminalTab } from "./tabState";
 
 describe("WorkbenchMain", () => {
-  it("renders the terminal surface for terminal tabs", () => {
+  it("renders the active project workspace", () => {
     const markup = renderToStaticMarkup(
       <WorkbenchMain
-        activeTab={createTerminalTab("session-a")}
-        onCloseTab={() => undefined}
+        onActivatePane={() => undefined}
+        onCloseProjectTab={() => undefined}
+        onProjectLayoutChange={() => undefined}
         onStreamDetached={() => undefined}
         onStreamError={() => undefined}
         onStreamMetadata={() => undefined}
         onStreamMetadataDelta={() => undefined}
         onResetSettingsGroup={() => undefined}
+        onSelectProjectTab={() => undefined}
         onSelectSettingsGroup={() => undefined}
-        onSelectTab={() => undefined}
+        onSplitPane={() => undefined}
         onUpdateSettings={() => undefined}
+        projectWorkspace={createWorkspace()}
         selectedSettingsGroup="appearance"
-        sessions={[
-          {
-            sessionId: "session-a",
-            title: "PowerShell",
-            status: "running",
-            transport: "local_pty",
-            size: { cols: 80, rows: 24, pixelWidth: 0, pixelHeight: 0 },
-            createdAt: "1",
-            updatedAt: "1"
-          }
-        ]}
-        settings={{
-          ...DEFAULT_APP_SETTINGS,
-          appearance: {
-            ...DEFAULT_APP_SETTINGS.appearance,
-            themePreset: "north",
-            fontFamily: "Cascadia Mono",
-            fontSize: 14,
-            lineHeight: 1.2,
-            letterSpacing: 0,
-            cursorStyle: "block",
-            cursorBlink: true
-          },
-          terminal: {
-            ...DEFAULT_APP_SETTINGS.terminal,
-            scrollbackLines: 2000,
-            rightClickBehavior: "paste",
-            bellMode: "off"
-          },
-          workspace: {
-            ...DEFAULT_APP_SETTINGS.workspace,
-            startupBehavior: "restore_previous",
-            closeConfirmation: "confirm_running_sessions"
-          }
-        }}
-        tabs={[createTerminalTab("session-a"), createTerminalTab("session-b")]}
+        sessions={[]}
+        settings={DEFAULT_APP_SETTINGS}
       />
     );
 
-    expect(markup).toContain("terminal-workspace");
-    expect(markup.match(/terminal-surface/g)).toHaveLength(2);
-    expect(markup).toContain('data-terminal-active="true"');
-    expect(markup).not.toContain("settings-page");
+    expect(markup).toContain("project-workspace");
+    expect(markup).toContain('data-active-pane-id="pane-a"');
+    expect(markup).not.toContain("project-title-strip");
+    expect(markup).not.toContain("html-tab-layer");
   });
 
-  it("keeps the terminal workspace mounted behind html tabs", () => {
+  it("does not render a global html page overlay", () => {
     const markup = renderToStaticMarkup(
       <WorkbenchMain
-        activeTab={createHtmlTab("settings", "Settings")}
-        onCloseTab={() => undefined}
+        onActivatePane={() => undefined}
+        onCloseProjectTab={() => undefined}
+        onProjectLayoutChange={() => undefined}
         onStreamDetached={() => undefined}
         onStreamError={() => undefined}
         onStreamMetadata={() => undefined}
         onStreamMetadataDelta={() => undefined}
         onResetSettingsGroup={() => undefined}
+        onSelectProjectTab={() => undefined}
         onSelectSettingsGroup={() => undefined}
-        onSelectTab={() => undefined}
+        onSplitPane={() => undefined}
         onUpdateSettings={() => undefined}
+        projectWorkspace={createWorkspace()}
         selectedSettingsGroup="appearance"
-        sessions={[
-          {
-            sessionId: "session-a",
-            title: "PowerShell",
-            status: "running",
-            transport: "local_pty",
-            size: { cols: 80, rows: 24, pixelWidth: 0, pixelHeight: 0 },
-            createdAt: "1",
-            updatedAt: "1"
-          }
-        ]}
-        settings={{
-          ...DEFAULT_APP_SETTINGS,
-          appearance: {
-            ...DEFAULT_APP_SETTINGS.appearance,
-            themePreset: "north",
-            fontFamily: "Cascadia Mono",
-            fontSize: 14,
-            lineHeight: 1.2,
-            letterSpacing: 0,
-            cursorStyle: "block",
-            cursorBlink: true
-          },
-          terminal: {
-            ...DEFAULT_APP_SETTINGS.terminal,
-            scrollbackLines: 2000,
-            rightClickBehavior: "paste",
-            bellMode: "off"
-          },
-          workspace: {
-            ...DEFAULT_APP_SETTINGS.workspace,
-            startupBehavior: "restore_previous",
-            closeConfirmation: "confirm_running_sessions"
-          }
-        }}
-        tabs={[createTerminalTab("session-a"), createHtmlTab("settings", "Settings")]}
+        sessions={[]}
+        settings={DEFAULT_APP_SETTINGS}
       />
     );
 
-    expect(markup).toContain("terminal-workspace");
-    expect(markup).toContain('data-terminal-workspace-visibility="hidden"');
-    expect(markup).toContain("html-tab-region");
-    expect(markup).toContain("settings-page");
-    expect(markup).toContain("terminal-surface");
+    expect(markup).toContain("project-workspace");
+    expect(markup).not.toContain("html-tab-layer");
+    expect(markup).not.toContain("html-tab-region");
   });
 });
+
+function createWorkspace(): ProjectWorkspace {
+  return {
+    activeProjectId: "project-a",
+    projects: [
+      {
+        projectId: "project-a",
+        name: "Default Project",
+        activePaneId: "pane-a",
+        layout: {
+          type: "leaf",
+          paneId: "pane-a",
+          activeTabId: null,
+          tabs: []
+        }
+      }
+    ]
+  };
+}

@@ -1,4 +1,5 @@
-export type HtmlPageId = "settings";
+import type { HtmlPageId } from "@aria/types";
+export type { HtmlPageId } from "@aria/types";
 
 export type TerminalTab = {
   id: `terminal:${string}`;

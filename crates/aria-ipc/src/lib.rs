@@ -1,6 +1,6 @@
 use aria_model::{
-    AppInfo, CursorPosition, HealthStatus, SessionId, SessionStatus, SessionTransportKind,
-    TerminalSize, ViewerId,
+    AppInfo, CursorPosition, HealthStatus, PaneId, ProjectId, ProjectTabId, SessionId,
+    SessionStatus, SessionTransportKind, TerminalSize, ViewerId,
 };
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -81,6 +81,109 @@ pub struct SessionSummary {
     pub size: TerminalSize,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PaneSplitDirection {
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HtmlPageId {
+    Settings,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectTabKind {
+    #[default]
+    Terminal,
+    Html,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectTab {
+    #[serde(default)]
+    pub kind: ProjectTabKind,
+    #[serde(default)]
+    pub page_id: Option<HtmlPageId>,
+    pub tab_id: ProjectTabId,
+    pub title: String,
+    pub session_id: Option<SessionId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectPane {
+    pub pane_id: PaneId,
+    pub active_tab_id: Option<ProjectTabId>,
+    pub tabs: Vec<ProjectTab>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ProjectPaneNode {
+    #[serde(rename = "leaf")]
+    Leaf(ProjectPane),
+    #[serde(rename = "split", rename_all = "camelCase")]
+    Split {
+        split_id: PaneId,
+        direction: PaneSplitDirection,
+        ratio: f32,
+        first: Box<ProjectPaneNode>,
+        second: Box<ProjectPaneNode>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSummary {
+    pub project_id: ProjectId,
+    pub name: String,
+    pub active_pane_id: PaneId,
+    pub layout: ProjectPaneNode,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectWorkspace {
+    pub active_project_id: ProjectId,
+    pub projects: Vec<ProjectSummary>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetProjectWorkspaceRequest;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateProjectRequest {
+    pub name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameProjectRequest {
+    pub project_id: ProjectId,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSelector {
+    pub project_id: ProjectId,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProjectLayoutRequest {
+    pub project_id: ProjectId,
+    pub active_pane_id: PaneId,
+    pub layout: ProjectPaneNode,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -794,10 +897,8 @@ pub trait SessionService: Send + Sync {
         request: SessionResizeRequest,
     ) -> Result<EmptyResponse, ContractError>;
 
-    async fn close_session(
-        &self,
-        request: SessionSelector,
-    ) -> Result<EmptyResponse, ContractError>;
+    async fn close_session(&self, request: SessionSelector)
+        -> Result<EmptyResponse, ContractError>;
 
     async fn rename_session(
         &self,
@@ -819,10 +920,8 @@ pub trait SessionService: Send + Sync {
 
 #[async_trait]
 pub trait SettingsService: Send + Sync {
-    async fn get_settings(
-        &self,
-        request: GetSettingsRequest,
-    ) -> Result<AppSettings, ContractError>;
+    async fn get_settings(&self, request: GetSettingsRequest)
+        -> Result<AppSettings, ContractError>;
 
     async fn update_settings(
         &self,
@@ -833,6 +932,39 @@ pub trait SettingsService: Send + Sync {
         &self,
         request: ResetSettingsGroupRequest,
     ) -> Result<AppSettings, ContractError>;
+}
+
+#[async_trait]
+pub trait ProjectService: Send + Sync {
+    async fn get_project_workspace(
+        &self,
+        request: GetProjectWorkspaceRequest,
+    ) -> Result<ProjectWorkspace, ContractError>;
+
+    async fn create_project(
+        &self,
+        request: CreateProjectRequest,
+    ) -> Result<ProjectSummary, ContractError>;
+
+    async fn rename_project(
+        &self,
+        request: RenameProjectRequest,
+    ) -> Result<ProjectWorkspace, ContractError>;
+
+    async fn delete_project(
+        &self,
+        request: ProjectSelector,
+    ) -> Result<ProjectWorkspace, ContractError>;
+
+    async fn activate_project(
+        &self,
+        request: ProjectSelector,
+    ) -> Result<ProjectWorkspace, ContractError>;
+
+    async fn update_project_layout(
+        &self,
+        request: UpdateProjectLayoutRequest,
+    ) -> Result<ProjectWorkspace, ContractError>;
 }
 
 #[derive(Clone, Debug)]
@@ -966,6 +1098,48 @@ impl DaemonClient {
         self.call("settings.resetGroup", &request).await
     }
 
+    pub async fn get_project_workspace(
+        &self,
+        request: GetProjectWorkspaceRequest,
+    ) -> Result<ProjectWorkspace, ClientError> {
+        self.call("projects.getWorkspace", &request).await
+    }
+
+    pub async fn create_project(
+        &self,
+        request: CreateProjectRequest,
+    ) -> Result<ProjectSummary, ClientError> {
+        self.call("projects.create", &request).await
+    }
+
+    pub async fn rename_project(
+        &self,
+        request: RenameProjectRequest,
+    ) -> Result<ProjectWorkspace, ClientError> {
+        self.call("projects.rename", &request).await
+    }
+
+    pub async fn delete_project(
+        &self,
+        request: ProjectSelector,
+    ) -> Result<ProjectWorkspace, ClientError> {
+        self.call("projects.delete", &request).await
+    }
+
+    pub async fn activate_project(
+        &self,
+        request: ProjectSelector,
+    ) -> Result<ProjectWorkspace, ClientError> {
+        self.call("projects.activate", &request).await
+    }
+
+    pub async fn update_project_layout(
+        &self,
+        request: UpdateProjectLayoutRequest,
+    ) -> Result<ProjectWorkspace, ClientError> {
+        self.call("projects.updateLayout", &request).await
+    }
+
     pub async fn call<Req, Resp>(&self, method: &str, payload: &Req) -> Result<Resp, ClientError>
     where
         Req: Serialize + ?Sized,
@@ -1018,13 +1192,12 @@ impl DaemonClient {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppSettings, AttachViewerRequest, BufferKind, CloseConfirmation,
-        CreateLocalSessionRequest, DaemonInfo, HealthRequest, HealthResponse, PayloadEncoding,
-        ReadScrollbackResponse, ReplayMode, RehydrateReason, ResetSettingsGroupRequest,
-        RightClickBehavior, RpcRequest, RpcResponse, ScrollbackLine, ScrollbackStats,
-        SessionMetadata, SessionMetadataDelta, SessionSnapshot, SessionStreamFrame,
-        SessionStreamMetadata, SessionSummary, SettingsGroup, StartupBehavior, ThemePreset,
-        UpdateAppSettingsPayload, UpdateSettingsRequest, ViewerRole,
+        AppSettings, AttachViewerRequest, BufferKind, CloseConfirmation, CreateLocalSessionRequest,
+        DaemonInfo, HealthRequest, HealthResponse, PayloadEncoding, ReadScrollbackResponse,
+        RehydrateReason, ReplayMode, ResetSettingsGroupRequest, RightClickBehavior, RpcRequest,
+        RpcResponse, ScrollbackLine, ScrollbackStats, SessionMetadata, SessionMetadataDelta,
+        SessionSnapshot, SessionStreamFrame, SessionStreamMetadata, SessionSummary, SettingsGroup,
+        StartupBehavior, ThemePreset, UpdateAppSettingsPayload, UpdateSettingsRequest, ViewerRole,
     };
     use aria_model::{
         AppInfo, CursorPosition, HealthStatus, SessionId, SessionStatus, SessionTransportKind,
@@ -1184,8 +1357,18 @@ mod tests {
 
         let json = serde_json::to_value(&frame).expect("serialize frame to value");
 
-        assert_eq!(json.get("sessionId").and_then(|value| value.as_str()).is_some(), true);
-        assert_eq!(json.get("viewerId").and_then(|value| value.as_str()).is_some(), true);
+        assert_eq!(
+            json.get("sessionId")
+                .and_then(|value| value.as_str())
+                .is_some(),
+            true
+        );
+        assert_eq!(
+            json.get("viewerId")
+                .and_then(|value| value.as_str())
+                .is_some(),
+            true
+        );
         assert_eq!(
             json.get("activeBuffer").and_then(|value| value.as_str()),
             Some("primary")
@@ -1194,7 +1377,12 @@ mod tests {
             json.get("payloadEncoding").and_then(|value| value.as_str()),
             Some("base64")
         );
-        assert_eq!(json.get("vtPayload").and_then(|value| value.as_str()).is_some(), true);
+        assert_eq!(
+            json.get("vtPayload")
+                .and_then(|value| value.as_str())
+                .is_some(),
+            true
+        );
 
         assert!(json.get("session_id").is_none());
         assert!(json.get("viewer_id").is_none());
@@ -1283,12 +1471,18 @@ mod tests {
         let value = serde_json::to_value(&settings).expect("serialize settings value");
 
         assert_eq!(decoded.appearance.theme_preset, ThemePreset::North);
-        assert_eq!(decoded.terminal.right_click_behavior, RightClickBehavior::Paste);
+        assert_eq!(
+            decoded.terminal.right_click_behavior,
+            RightClickBehavior::Paste
+        );
         assert_eq!(
             decoded.workspace.close_confirmation,
             CloseConfirmation::ConfirmRunningSessions
         );
-        assert_eq!(decoded.workspace.startup_behavior, StartupBehavior::RestorePrevious);
+        assert_eq!(
+            decoded.workspace.startup_behavior,
+            StartupBehavior::RestorePrevious
+        );
         assert_eq!(decoded.localization.locale, "system");
         assert!(value.get("profiles").is_some());
         let profiles = value
@@ -1297,12 +1491,11 @@ mod tests {
             .and_then(|items| items.as_array())
             .expect("profiles.items array");
         assert!(!profiles.is_empty());
-        assert!(
-            value.get("profiles")
-                .and_then(|profiles| profiles.get("defaultProfileId"))
-                .and_then(|profile| profile.as_str())
-                .is_some()
-        );
+        assert!(value
+            .get("profiles")
+            .and_then(|profiles| profiles.get("defaultProfileId"))
+            .and_then(|profile| profile.as_str())
+            .is_some());
     }
 
     #[test]
@@ -1362,6 +1555,116 @@ mod tests {
             Some("builtin:powershell")
         );
     }
+
+    #[test]
+    fn project_workspace_round_trips_with_pane_local_tabs() {
+        let project_id = aria_model::ProjectId::new();
+        let pane_id = aria_model::PaneId::new();
+        let tab_id = aria_model::ProjectTabId::new();
+        let session_id = SessionId::new();
+        let workspace = super::ProjectWorkspace {
+            active_project_id: project_id,
+            projects: vec![super::ProjectSummary {
+                project_id,
+                name: "Default Project".to_string(),
+                active_pane_id: pane_id,
+                layout: super::ProjectPaneNode::Leaf(super::ProjectPane {
+                    pane_id,
+                    active_tab_id: Some(tab_id),
+                    tabs: vec![super::ProjectTab {
+                        kind: super::ProjectTabKind::Terminal,
+                        page_id: None,
+                        tab_id,
+                        title: "PowerShell".to_string(),
+                        session_id: Some(session_id),
+                    }],
+                }),
+            }],
+        };
+
+        let json = serde_json::to_value(&workspace).expect("serialize project workspace");
+        assert!(json.get("activeProjectId").is_some());
+        let decoded: super::ProjectWorkspace =
+            serde_json::from_value(json).expect("deserialize project workspace");
+
+        assert_eq!(decoded.active_project_id, project_id);
+        let super::ProjectPaneNode::Leaf(pane) = &decoded.projects[0].layout else {
+            panic!("expected leaf pane");
+        };
+        assert_eq!(pane.tabs[0].session_id, Some(session_id));
+        assert_eq!(pane.tabs[0].kind, super::ProjectTabKind::Terminal);
+        assert_eq!(pane.tabs[0].page_id, None);
+    }
+
+    #[test]
+    fn project_workspace_round_trips_with_html_tabs() {
+        let project_id = aria_model::ProjectId::new();
+        let pane_id = aria_model::PaneId::new();
+        let tab_id = aria_model::ProjectTabId::new();
+        let workspace = super::ProjectWorkspace {
+            active_project_id: project_id,
+            projects: vec![super::ProjectSummary {
+                project_id,
+                name: "Default Project".to_string(),
+                active_pane_id: pane_id,
+                layout: super::ProjectPaneNode::Leaf(super::ProjectPane {
+                    pane_id,
+                    active_tab_id: Some(tab_id),
+                    tabs: vec![super::ProjectTab {
+                        kind: super::ProjectTabKind::Html,
+                        page_id: Some(super::HtmlPageId::Settings),
+                        tab_id,
+                        title: "Settings".to_string(),
+                        session_id: None,
+                    }],
+                }),
+            }],
+        };
+
+        let json = serde_json::to_value(&workspace).expect("serialize project workspace");
+        let decoded: super::ProjectWorkspace =
+            serde_json::from_value(json).expect("deserialize project workspace");
+
+        let super::ProjectPaneNode::Leaf(pane) = &decoded.projects[0].layout else {
+            panic!("expected leaf pane");
+        };
+        assert_eq!(pane.tabs[0].kind, super::ProjectTabKind::Html);
+        assert_eq!(pane.tabs[0].page_id, Some(super::HtmlPageId::Settings));
+        assert_eq!(pane.tabs[0].session_id, None);
+    }
+
+    #[test]
+    fn project_tabs_default_to_terminal_for_legacy_payloads() {
+        let tab_id = aria_model::ProjectTabId::new();
+        let session_id = SessionId::new();
+        let json = serde_json::json!({
+            "tabId": tab_id,
+            "title": "PowerShell",
+            "sessionId": session_id
+        });
+
+        let decoded: super::ProjectTab =
+            serde_json::from_value(json).expect("deserialize legacy project tab");
+
+        assert_eq!(decoded.kind, super::ProjectTabKind::Terminal);
+        assert_eq!(decoded.page_id, None);
+        assert_eq!(decoded.session_id, Some(session_id));
+    }
+
+    #[test]
+    fn project_requests_serialize_with_expected_rpc_shape() {
+        let project_id = aria_model::ProjectId::new();
+        let request = super::RenameProjectRequest {
+            project_id,
+            name: "Client".to_string(),
+        };
+
+        let json = serde_json::to_value(&request).expect("serialize rename request");
+
+        assert!(json.get("projectId").is_some());
+        assert_eq!(
+            json.get("name").and_then(|value| value.as_str()),
+            Some("Client")
+        );
+    }
 }
-
-

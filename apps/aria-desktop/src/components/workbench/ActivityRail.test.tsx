@@ -84,4 +84,36 @@ describe("ActivityRail", () => {
       expect(container.textContent).toContain(aboutLabel);
     }
   );
+
+  it("renders projects as the top rail item", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <I18nProvider
+          locale="en"
+          namespaces={DESKTOP_I18N_NAMESPACES}
+          sources={[BUNDLED_CATALOG_SOURCE]}
+        >
+          <ActivityRail
+            isToolMenuOpen={false}
+            onAbout={() => undefined}
+            onCheckForUpdates={() => undefined}
+            onOpenSidebarChange={() => undefined}
+            onSettings={() => undefined}
+            onToolMenuOpenChange={() => undefined}
+            openSidebar="projects"
+          />
+        </I18nProvider>
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const buttons = [...(container.querySelectorAll(".rail-group:first-child .rail-button") ?? [])];
+    expect(buttons[0]?.getAttribute("aria-label")).toBe("Projects");
+    expect(buttons[0]?.className).toContain("rail-button-active");
+  });
 });

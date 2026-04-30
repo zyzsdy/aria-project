@@ -1,8 +1,9 @@
-import type { SessionSummary, ShellProfile } from "@aria/types";
+import type { ProjectWorkspace, SessionSummary, ShellProfile } from "@aria/types";
 import { ChevronDown, Plus, RefreshCw } from "lucide-react";
 import { defineMessages } from "../../../i18n/messages";
 import { useT } from "../../../i18n/react";
 import { CollectionsSidebar } from "./CollectionsSidebar";
+import { ProjectSidebar } from "./ProjectSidebar";
 import { SessionSidebar } from "./SessionSidebar";
 import type { SidebarPanel } from "./sidebarState";
 
@@ -31,6 +32,14 @@ const SIDEBAR_MESSAGES = defineMessages({
     key: "workbench.sidebar.collections.title",
     defaultMessage: "Collections"
   },
+  projectsTitle: {
+    key: "workbench.sidebar.projects.title",
+    defaultMessage: "Projects"
+  },
+  createProject: {
+    key: "workbench.sidebar.projects.create",
+    defaultMessage: "Create project"
+  },
   defaultProfile: {
     key: "workbench.sidebar.default_profile_badge",
     defaultMessage: "Default"
@@ -40,15 +49,20 @@ const SIDEBAR_MESSAGES = defineMessages({
 type SidebarHostProps = {
   busy: boolean;
   onCreateSession: () => void;
+  onCreateProject: () => void;
   onCreateSessionWithProfile: (profileId: string) => void;
+  onDeleteProject: (projectId: string) => void;
   onProfileMenuOpenChange: (next: boolean) => void;
   onRefresh: () => void;
+  onRenameProject: (projectId: string) => void;
+  onSelectProject: (projectId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
   openSidebar: SidebarPanel;
   openProfileMenu: boolean;
   profiles: readonly ShellProfile[];
+  projectWorkspace: ProjectWorkspace;
   defaultProfileId: string;
   selectedSessionId: string | null;
   sessions: SessionSummary[];
@@ -57,24 +71,32 @@ type SidebarHostProps = {
 export function SidebarHost({
   busy,
   onCreateSession,
+  onCreateProject,
   onCreateSessionWithProfile,
+  onDeleteProject,
   onProfileMenuOpenChange,
   onRefresh,
+  onRenameProject,
+  onSelectProject,
   onSelectSession,
   onRenameSession,
   onCloseSession,
   openSidebar,
   openProfileMenu,
   profiles,
+  projectWorkspace,
   defaultProfileId,
   selectedSessionId,
   sessions
 }: SidebarHostProps) {
   const t = useT();
   const isSessions = openSidebar === "sessions";
-  const title = isSessions
-    ? t(SIDEBAR_MESSAGES.sessionsTitle)
-    : t(SIDEBAR_MESSAGES.collectionsTitle);
+  const isProjects = openSidebar === "projects";
+  const title = isProjects
+    ? t(SIDEBAR_MESSAGES.projectsTitle)
+    : isSessions
+      ? t(SIDEBAR_MESSAGES.sessionsTitle)
+      : t(SIDEBAR_MESSAGES.collectionsTitle);
 
   return (
     <aside
@@ -83,7 +105,19 @@ export function SidebarHost({
     >
       <header className="sidebar-panel-header">
         <h2>{title}</h2>
-        {isSessions ? (
+        {isProjects ? (
+          <div className="sidebar-panel-actions">
+            <button
+              aria-label={t(SIDEBAR_MESSAGES.createProject)}
+              className="sidebar-icon-button"
+              disabled={busy}
+              onClick={onCreateProject}
+              type="button"
+            >
+              <Plus aria-hidden="true" size={14} strokeWidth={2} />
+            </button>
+          </div>
+        ) : isSessions ? (
           <div className="sidebar-panel-actions">
             <button
               aria-label={t(SIDEBAR_MESSAGES.refreshSessions)}
@@ -139,7 +173,15 @@ export function SidebarHost({
       </header>
 
       <div className="sidebar-panel-body">
-        {isSessions ? (
+        {isProjects ? (
+          <ProjectSidebar
+            onDeleteProject={onDeleteProject}
+            onRenameProject={onRenameProject}
+            onSelectProject={onSelectProject}
+            sessions={sessions}
+            workspace={projectWorkspace}
+          />
+        ) : isSessions ? (
           <SessionSidebar
             onSelectSession={onSelectSession}
             onRenameSession={onRenameSession}

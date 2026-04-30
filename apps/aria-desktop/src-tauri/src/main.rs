@@ -4,13 +4,15 @@ use anyhow::{anyhow, Context, Result};
 use aria_core::{init_observability, AppRole, BootstrapContext};
 use aria_ipc::{
     AppSettings, AttachViewerRequest, AttachViewerResponse, CreateLocalSessionRequest,
-    CreateLocalSessionResponse, DaemonClient, DetachViewerRequest, GetSettingsRequest,
-    HealthRequest, HealthResponse, ListSessionsRequest, RenameSessionRequest,
-    ResetSettingsGroupRequest, RpcRequest, RpcResponse, SessionSelector, SessionResizeRequest,
-    SessionSnapshot, SessionStreamFrame, SessionSummary, SessionWriteRequest, SettingsGroup,
-    UpdateAppSettingsPayload, UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
+    CreateLocalSessionResponse, CreateProjectRequest, DaemonClient, DetachViewerRequest,
+    GetProjectWorkspaceRequest, GetSettingsRequest, HealthRequest, HealthResponse,
+    ListSessionsRequest, ProjectSelector, ProjectSummary, ProjectWorkspace, RenameProjectRequest,
+    RenameSessionRequest, ResetSettingsGroupRequest, RpcRequest, RpcResponse, SessionResizeRequest,
+    SessionSelector, SessionSnapshot, SessionStreamFrame, SessionSummary, SessionWriteRequest,
+    SettingsGroup, UpdateAppSettingsPayload, UpdateProjectLayoutRequest, UpdateSettingsRequest,
+    ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
-use aria_model::{AppInfo, SessionId, TerminalSize, ViewerId};
+use aria_model::{AppInfo, ProjectId, SessionId, TerminalSize, ViewerId};
 use serde::Serialize;
 use std::{
     path::{Path, PathBuf},
@@ -137,10 +139,7 @@ async fn write_session(
 }
 
 #[tauri::command]
-async fn close_session(
-    state: State<'_, DesktopState>,
-    session_id: String,
-) -> Result<(), String> {
+async fn close_session(state: State<'_, DesktopState>, session_id: String) -> Result<(), String> {
     state
         .daemon
         .ensure_ready()
@@ -230,10 +229,7 @@ async fn attach_session_stream(
 }
 
 #[tauri::command]
-async fn detach_viewer(
-    state: State<'_, DesktopState>,
-    viewer_id: String,
-) -> Result<(), String> {
+async fn detach_viewer(state: State<'_, DesktopState>, viewer_id: String) -> Result<(), String> {
     state
         .daemon
         .ensure_ready()
@@ -326,6 +322,121 @@ async fn reset_app_settings_group(
 }
 
 #[tauri::command]
+async fn get_project_workspace(state: State<'_, DesktopState>) -> Result<ProjectWorkspace, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    state
+        .daemon
+        .client
+        .get_project_workspace(GetProjectWorkspaceRequest)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn create_project(
+    state: State<'_, DesktopState>,
+    name: String,
+) -> Result<ProjectSummary, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    state
+        .daemon
+        .client
+        .create_project(CreateProjectRequest { name })
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn rename_project(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    name: String,
+) -> Result<ProjectWorkspace, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    let project_id = project_id
+        .parse::<ProjectId>()
+        .map_err(|error| format!("invalid project id: {error}"))?;
+    state
+        .daemon
+        .client
+        .rename_project(RenameProjectRequest { project_id, name })
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn delete_project(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<ProjectWorkspace, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    let project_id = project_id
+        .parse::<ProjectId>()
+        .map_err(|error| format!("invalid project id: {error}"))?;
+    state
+        .daemon
+        .client
+        .delete_project(ProjectSelector { project_id })
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn activate_project(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<ProjectWorkspace, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    let project_id = project_id
+        .parse::<ProjectId>()
+        .map_err(|error| format!("invalid project id: {error}"))?;
+    state
+        .daemon
+        .client
+        .activate_project(ProjectSelector { project_id })
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn update_project_layout(
+    state: State<'_, DesktopState>,
+    request: UpdateProjectLayoutRequest,
+) -> Result<ProjectWorkspace, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    state
+        .daemon
+        .client
+        .update_project_layout(request)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn get_about_runtime_info() -> AboutRuntimeInfo {
     AboutRuntimeInfo {
         webview_version: tauri::webview_version().ok(),
@@ -387,6 +498,12 @@ fn main() -> Result<()> {
             get_app_settings,
             update_app_settings,
             reset_app_settings_group,
+            get_project_workspace,
+            create_project,
+            rename_project,
+            delete_project,
+            activate_project,
+            update_project_layout,
             get_about_runtime_info,
             open_external_url
         ])
@@ -542,7 +659,9 @@ where
     if !response.ok {
         return Err(anyhow!(
             "{}",
-            response.error.unwrap_or_else(|| "unknown daemon error".to_string())
+            response
+                .error
+                .unwrap_or_else(|| "unknown daemon error".to_string())
         ));
     }
     let payload = response

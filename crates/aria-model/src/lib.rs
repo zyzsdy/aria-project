@@ -56,6 +56,9 @@ define_id!(SessionId);
 define_id!(ViewerId);
 define_id!(WindowId);
 define_id!(ConnectionProfileId);
+define_id!(ProjectId);
+define_id!(PaneId);
+define_id!(ProjectTabId);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

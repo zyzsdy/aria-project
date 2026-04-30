@@ -1,5 +1,6 @@
 [workbench.activity_rail]
 aria_label = "ワークベンチのセクション"
+projects = "プロジェクト"
 sessions = "セッション"
 collections = "コレクション"
 open_menu = "メニューを開く"
@@ -10,6 +11,26 @@ refresh_sessions = "セッションを更新"
 create_session = "セッションを作成"
 open_shell_profiles = "shell プロファイルメニューを開く"
 default_profile_badge = "既定"
+
+[workbench.sidebar.projects]
+title = "プロジェクト"
+create = "プロジェクトを作成"
+
+[workbench.projects]
+branch_placeholder = "git ブランチは shell integration 待ち"
+create = "作成"
+create_dialog_title = "プロジェクトを作成"
+cwd_placeholder = "cwd は shell integration 待ち"
+delete = "削除"
+empty_pane = "このペインにタブはありません"
+empty_session = "アクティブなセッションはありません"
+name_placeholder = "プロジェクト名"
+name_prompt = "プロジェクト名"
+rename = "名前を変更"
+rename_dialog_title = "プロジェクト名を変更"
+session_unavailable = "セッションを利用できません"
+split_horizontal = "左右に分割"
+split_vertical = "上下に分割"
 
 [workbench.sidebar.sessions]
 title = "セッション"

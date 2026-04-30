@@ -1,4 +1,4 @@
-export type SidebarPanel = "sessions" | "collections";
+export type SidebarPanel = "projects" | "sessions" | "collections";
 export type RailAction = SidebarPanel | "settings";
 
 export function toggleSidebar(

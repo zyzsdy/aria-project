@@ -1,4 +1,4 @@
-import { Ellipsis, FolderKanban, PanelsTopLeft, type LucideIcon } from "lucide-react";
+import { Ellipsis, FolderKanban, PanelsTopLeft, SquareStack, type LucideIcon } from "lucide-react";
 import { defineMessages } from "../../i18n/messages";
 import { useT } from "../../i18n/react";
 import { toggleSidebar, type RailAction, type SidebarPanel } from "./sidebar/sidebarState";
@@ -14,6 +14,10 @@ const RAIL_ITEM_MESSAGES = defineMessages({
   sessions: {
     key: "workbench.activity_rail.sessions",
     defaultMessage: "Sessions"
+  },
+  projects: {
+    key: "workbench.activity_rail.projects",
+    defaultMessage: "Projects"
   },
   collections: {
     key: "workbench.activity_rail.collections",
@@ -49,6 +53,7 @@ const ACTIVITY_RAIL_MESSAGES = defineMessages({
 });
 
 const PRIMARY_ITEMS: RailItem[] = [
+  { action: "projects", icon: SquareStack, labelKey: "projects", size: 26 },
   { action: "sessions", icon: PanelsTopLeft, labelKey: "sessions", size: 26 },
   { action: "collections", icon: FolderKanban, labelKey: "collections", size: 26 }
 ];

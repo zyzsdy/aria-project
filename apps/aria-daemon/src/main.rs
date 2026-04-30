@@ -1,13 +1,18 @@
 mod local_profiles;
+mod projects;
 mod settings;
 
+use crate::local_profiles::resolve_local_session_request;
+use crate::projects::ProjectStore;
+use crate::settings::SettingsStore;
 use anyhow::{Context, Result};
 use aria_core::{init_observability, AppRole, BootstrapContext};
 use aria_ipc::{
     AttachViewerRequest, ContractError, CreateLocalSessionRequest, DaemonClient, DaemonInfo,
-    DetachViewerRequest, EmptyResponse, GetSettingsRequest, HealthRequest, HealthResponse,
-    ListSessionsRequest, ReadScrollbackRequest, RenameSessionRequest, ResetSettingsGroupRequest,
-    RpcRequest, RpcResponse, SessionResizeRequest, SessionSelector, SessionWriteRequest,
+    DetachViewerRequest, EmptyResponse, GetProjectWorkspaceRequest, GetSettingsRequest,
+    HealthRequest, HealthResponse, ListSessionsRequest, ProjectSelector, ReadScrollbackRequest,
+    RenameProjectRequest, RenameSessionRequest, ResetSettingsGroupRequest, RpcRequest, RpcResponse,
+    SessionResizeRequest, SessionSelector, SessionWriteRequest, UpdateProjectLayoutRequest,
     UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, HealthStatus};
@@ -25,8 +30,6 @@ use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
 };
-use crate::local_profiles::resolve_local_session_request;
-use crate::settings::SettingsStore;
 use tracing::{info, warn};
 
 #[derive(Debug, Parser)]
@@ -44,6 +47,7 @@ enum Command {
 struct DaemonState {
     app_info: AppInfo,
     manager: SessionManager,
+    projects: ProjectStore,
     settings: SettingsStore,
     started_at: String,
 }
@@ -125,6 +129,7 @@ async fn serve(context: BootstrapContext, app_info: AppInfo) -> Result<()> {
     let state = Arc::new(DaemonState {
         app_info,
         manager: SessionManager::new(),
+        projects: ProjectStore::load(context.paths.config_dir.join("projects.toml"))?,
         settings: SettingsStore::load(context.paths.config_dir.join("settings.toml"))?,
         started_at: started_at.clone(),
     });
@@ -297,6 +302,45 @@ async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcRe
             Ok(payload) => match state.settings.reset_group(payload).await {
                 Ok(response) => ok(response),
                 Err(error) => err(error),
+            },
+            Err(error) => err(error),
+        },
+        "projects.getWorkspace" => match decode::<GetProjectWorkspaceRequest>(request.payload) {
+            Ok(_payload) => ok(state.projects.get().await),
+            Err(error) => err(error),
+        },
+        "projects.create" => match decode::<aria_ipc::CreateProjectRequest>(request.payload) {
+            Ok(payload) => match state.projects.create_from_request(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(ContractError::Unavailable(error.to_string())),
+            },
+            Err(error) => err(error),
+        },
+        "projects.rename" => match decode::<RenameProjectRequest>(request.payload) {
+            Ok(payload) => match state.projects.rename(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(ContractError::Unavailable(error.to_string())),
+            },
+            Err(error) => err(error),
+        },
+        "projects.delete" => match decode::<ProjectSelector>(request.payload) {
+            Ok(payload) => match state.projects.delete_from_request(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(ContractError::Unavailable(error.to_string())),
+            },
+            Err(error) => err(error),
+        },
+        "projects.activate" => match decode::<ProjectSelector>(request.payload) {
+            Ok(payload) => match state.projects.activate(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(ContractError::Unavailable(error.to_string())),
+            },
+            Err(error) => err(error),
+        },
+        "projects.updateLayout" => match decode::<UpdateProjectLayoutRequest>(request.payload) {
+            Ok(payload) => match state.projects.update_layout(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(ContractError::Unavailable(error.to_string())),
             },
             Err(error) => err(error),
         },

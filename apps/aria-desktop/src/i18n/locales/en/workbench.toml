@@ -2,6 +2,7 @@
 aria_label = "Workbench sections"
 collections = "Collections"
 open_menu = "Open menu"
+projects = "Projects"
 sessions = "Sessions"
 
 [workbench.sidebar]
@@ -10,6 +11,26 @@ default_profile_badge = "Default"
 open_shell_profiles = "Open shell profiles"
 panel_aria_label = "{panel} panel"
 refresh_sessions = "Refresh sessions"
+
+[workbench.sidebar.projects]
+create = "Create project"
+title = "Projects"
+
+[workbench.projects]
+branch_placeholder = "branch pending shell integration"
+create = "Create"
+create_dialog_title = "Create project"
+cwd_placeholder = "cwd pending shell integration"
+delete = "Delete"
+empty_pane = "No tabs in this pane"
+empty_session = "No active session"
+name_placeholder = "Project name"
+name_prompt = "Project name"
+rename = "Rename"
+rename_dialog_title = "Rename project"
+session_unavailable = "Session unavailable"
+split_horizontal = "Split horizontally"
+split_vertical = "Split vertically"
 
 [workbench.sidebar.collections]
 title = "Collections"
