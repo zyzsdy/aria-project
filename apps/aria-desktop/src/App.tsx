@@ -18,6 +18,7 @@ import { startTransition, useEffect, useRef, useState } from "react";
 import { ModalDialog } from "./components/ModalDialog";
 import { AboutDialog } from "./components/workbench/AboutDialog";
 import { ActivityRail } from "./components/workbench/ActivityRail";
+import { TitleBar } from "./components/workbench/TitleBar";
 import { WorkbenchMain } from "./components/workbench/main/WorkbenchMain";
 import { getHtmlPageTitle } from "./components/workbench/main/htmlPageTitles";
 import {
@@ -711,6 +712,7 @@ function AppShell({
         className={`workbench ${openSidebar ? "workbench-sidebar-open" : "workbench-sidebar-closed"}`}
         data-theme={settings.appearance.themePreset}
       >
+        <TitleBar />
         <ActivityRail
           isToolMenuOpen={isToolMenuOpen}
           onAbout={handleOpenAbout}

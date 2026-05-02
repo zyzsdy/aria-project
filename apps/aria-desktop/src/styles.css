@@ -109,11 +109,61 @@ input[type="range"] {
   min-height: 0;
 }
 
+.title-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  background: var(--bg-tabstrip);
+  border-bottom: 1px solid var(--border-soft);
+  user-select: none;
+}
+
+.title-bar-title {
+  padding-left: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.title-bar-controls {
+  display: flex;
+  margin-left: auto;
+  height: 100%;
+}
+
+.title-bar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.title-bar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.title-bar-btn-close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
 .workbench-sidebar-open {
+  grid-template-rows: 32px 1fr;
   grid-template-columns: var(--rail-width) var(--sidebar-width) minmax(0, 1fr);
 }
 
 .workbench-sidebar-closed {
+  grid-template-rows: 32px 1fr;
   grid-template-columns: var(--rail-width) minmax(0, 1fr);
 }
 
@@ -1304,10 +1354,12 @@ input[type="range"] {
 
 @media (max-width: 1320px) {
   .workbench-sidebar-open {
+    grid-template-rows: 32px 1fr;
     grid-template-columns: var(--rail-width) 220px minmax(0, 1fr);
   }
 
   .workbench-sidebar-closed {
+    grid-template-rows: 32px 1fr;
     grid-template-columns: var(--rail-width) minmax(0, 1fr);
   }
 
@@ -1319,12 +1371,12 @@ input[type="range"] {
 @media (max-width: 980px) {
   .workbench-sidebar-open {
     grid-template-columns: 44px minmax(220px, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: 32px auto minmax(0, 1fr);
   }
 
   .workbench-sidebar-closed {
     grid-template-columns: 44px 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: 32px auto minmax(0, 1fr);
   }
 
   .workbench-sidebar-closed .activity-rail {
