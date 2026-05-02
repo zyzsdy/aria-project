@@ -59,6 +59,7 @@ type ProjectWorkspaceViewProps = {
   onStreamError: (error: unknown) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
   onStreamMetadataDelta: (sessionId: string, delta: SessionMetadataDelta) => void;
+  shouldCloseSessionIfUnusedOnDispose: (tabId: string) => boolean;
   onUpdateSettings: (next: Partial<AppSettings>) => void;
 };
 
@@ -84,6 +85,7 @@ export function ProjectWorkspaceView({
   onStreamError,
   onStreamMetadata,
   onStreamMetadataDelta,
+  shouldCloseSessionIfUnusedOnDispose,
   onUpdateSettings
 }: ProjectWorkspaceViewProps) {
   return (
@@ -111,6 +113,7 @@ export function ProjectWorkspaceView({
         onStreamError={onStreamError}
         onStreamMetadata={onStreamMetadata}
         onStreamMetadataDelta={onStreamMetadataDelta}
+        shouldCloseSessionIfUnusedOnDispose={shouldCloseSessionIfUnusedOnDispose}
         onUpdateSettings={onUpdateSettings}
       />
     </section>
@@ -144,6 +147,7 @@ function PaneNodeView({
   onStreamError,
   onStreamMetadata,
   onStreamMetadataDelta,
+  shouldCloseSessionIfUnusedOnDispose,
   onUpdateSettings
 }: PaneNodeViewProps) {
   if (layout.type === "leaf") {
@@ -169,6 +173,7 @@ function PaneNodeView({
         onStreamError={onStreamError}
         onStreamMetadata={onStreamMetadata}
         onStreamMetadataDelta={onStreamMetadataDelta}
+        shouldCloseSessionIfUnusedOnDispose={shouldCloseSessionIfUnusedOnDispose}
         onUpdateSettings={onUpdateSettings}
       />
     );
@@ -238,6 +243,7 @@ function PaneNodeView({
         onStreamError={onStreamError}
         onStreamMetadata={onStreamMetadata}
         onStreamMetadataDelta={onStreamMetadataDelta}
+        shouldCloseSessionIfUnusedOnDispose={shouldCloseSessionIfUnusedOnDispose}
         onUpdateSettings={onUpdateSettings}
       />
       <div
@@ -269,6 +275,7 @@ function PaneNodeView({
         onStreamError={onStreamError}
         onStreamMetadata={onStreamMetadata}
         onStreamMetadataDelta={onStreamMetadataDelta}
+        shouldCloseSessionIfUnusedOnDispose={shouldCloseSessionIfUnusedOnDispose}
         onUpdateSettings={onUpdateSettings}
       />
     </div>
@@ -296,6 +303,7 @@ type ProjectPaneViewProps = {
   onStreamError: (error: unknown) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
   onStreamMetadataDelta: (sessionId: string, delta: SessionMetadataDelta) => void;
+  shouldCloseSessionIfUnusedOnDispose: (tabId: string) => boolean;
   onUpdateSettings: (next: Partial<AppSettings>) => void;
 };
 
@@ -320,6 +328,7 @@ function ProjectPaneView({
   onStreamError,
   onStreamMetadata,
   onStreamMetadataDelta,
+  shouldCloseSessionIfUnusedOnDispose,
   onUpdateSettings
 }: ProjectPaneViewProps) {
   const t = useT();
@@ -391,6 +400,9 @@ function ProjectPaneView({
               onStreamMetadata={onStreamMetadata}
               onStreamMetadataDelta={onStreamMetadataDelta}
               sessionId={tab.sessionId}
+              shouldCloseSessionIfUnusedOnDispose={() =>
+                shouldCloseSessionIfUnusedOnDispose(tab.tabId)
+              }
               settings={settings}
             />
           ) : tab.kind === "html" && tab.pageId && tab.tabId === activeTab?.tabId ? (

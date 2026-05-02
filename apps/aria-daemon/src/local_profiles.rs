@@ -87,12 +87,14 @@ fn resolve_user_home_dir() -> Option<String> {
                 .ok()
                 .filter(|value| !value.trim().is_empty())
         })
-        .or_else(|| match (std::env::var("HOMEDRIVE"), std::env::var("HOMEPATH")) {
-            (Ok(drive), Ok(path)) if !drive.trim().is_empty() && !path.trim().is_empty() => {
-                Some(format!("{drive}{path}"))
-            }
-            _ => None,
-        })
+        .or_else(
+            || match (std::env::var("HOMEDRIVE"), std::env::var("HOMEPATH")) {
+                (Ok(drive), Ok(path)) if !drive.trim().is_empty() && !path.trim().is_empty() => {
+                    Some(format!("{drive}{path}"))
+                }
+                _ => None,
+            },
+        )
 }
 
 #[cfg(test)]

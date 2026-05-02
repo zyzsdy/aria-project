@@ -15,7 +15,7 @@ use aria_ipc::{
     SessionResizeRequest, SessionSelector, SessionWriteRequest, UpdateProjectLayoutRequest,
     UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
-use aria_model::{AppInfo, HealthStatus};
+use aria_model::{AppInfo, HealthStatus, SessionId};
 use aria_session::SessionManager;
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
@@ -267,10 +267,26 @@ async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcRe
             Err(error) => err(error),
         },
         "sessions.detachViewer" => match decode::<DetachViewerRequest>(request.payload) {
-            Ok(payload) => match state.manager.detach_viewer(payload).await {
-                Ok(response) => ok(response),
-                Err(error) => err(error),
-            },
+            Ok(payload) => {
+                let close_session_if_unused = payload.close_session_if_unused;
+                match state.manager.detach_viewer_with_session(payload).await {
+                    Ok(session_id) => {
+                        if close_session_if_unused {
+                            if let Err(error) =
+                                try_close_session_if_unused(state.as_ref(), session_id).await
+                            {
+                                warn!(
+                                    %session_id,
+                                    error = %error,
+                                    "failed to close detached session after unused check"
+                                );
+                            }
+                        }
+                        ok(EmptyResponse {})
+                    }
+                    Err(error) => err(error),
+                }
+            }
             Err(error) => err(error),
         },
         "sessions.viewerAck" => match decode::<ViewerAckRequest>(request.payload) {
@@ -338,16 +354,40 @@ async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcRe
             Err(error) => err(error),
         },
         "projects.updateLayout" => match decode::<UpdateProjectLayoutRequest>(request.payload) {
-            Ok(payload) => match state.projects.update_layout(payload).await {
-                Ok(response) => ok(response),
-                Err(error) => err(ContractError::Unavailable(error.to_string())),
-            },
+            Ok(payload) => {
+                let close_session_if_unused = payload.close_session_if_unused;
+                match state.projects.update_layout(payload).await {
+                    Ok(response) => {
+                        if let Some(session_id) = close_session_if_unused {
+                            if let Err(error) =
+                                try_close_session_if_unused(state.as_ref(), session_id).await
+                            {
+                                warn!(
+                                    %session_id,
+                                    error = %error,
+                                    "failed to close unreferenced session after layout update"
+                                );
+                            }
+                        }
+                        ok(response)
+                    }
+                    Err(error) => err(ContractError::Unavailable(error.to_string())),
+                }
+            }
             Err(error) => err(error),
         },
         method => err(ContractError::Unavailable(format!(
             "unknown method {method}"
         ))),
     }
+}
+
+async fn try_close_session_if_unused(state: &DaemonState, session_id: SessionId) -> Result<()> {
+    if state.projects.has_session_reference(session_id).await {
+        return Ok(());
+    }
+    state.manager.close_if_no_viewers(session_id).await?;
+    Ok(())
 }
 
 async fn handle_attach_viewer_stream(
@@ -366,7 +406,10 @@ async fn handle_attach_viewer_stream(
     if let Err(error) = write_json_line(&mut stream, &ok(response), "attach response").await {
         let _ = state
             .manager
-            .detach_viewer(DetachViewerRequest { viewer_id })
+            .detach_viewer(DetachViewerRequest {
+                viewer_id,
+                close_session_if_unused: false,
+            })
             .await;
         return Err(error);
     }
@@ -375,7 +418,10 @@ async fn handle_attach_viewer_stream(
         if let Err(error) = write_json_line(&mut stream, &frame, "stream frame").await {
             let _ = state
                 .manager
-                .detach_viewer(DetachViewerRequest { viewer_id })
+                .detach_viewer(DetachViewerRequest {
+                    viewer_id,
+                    close_session_if_unused: false,
+                })
                 .await;
             return Err(error);
         }
@@ -383,7 +429,10 @@ async fn handle_attach_viewer_stream(
 
     let _ = state
         .manager
-        .detach_viewer(DetachViewerRequest { viewer_id })
+        .detach_viewer(DetachViewerRequest {
+            viewer_id,
+            close_session_if_unused: false,
+        })
         .await;
     Ok(())
 }

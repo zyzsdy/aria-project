@@ -96,6 +96,7 @@ export function App() {
   const [projectNameDialog, setProjectNameDialog] = useState<ProjectNameDialogState>(null);
 
   const projectWorkspaceRef = useRef<ProjectWorkspace>(createEmptyProjectWorkspace());
+  const closingTerminalTabIdsRef = useRef<Set<string>>(new Set());
   const settingsRef = useRef<AppSettings>(cloneSettings(DEFAULT_APP_SETTINGS));
   const settingsStoreRef = useRef(
     createSettingsStore({
@@ -202,11 +203,15 @@ export function App() {
     }
   }
 
-  async function applyProjectWorkspace(nextWorkspace: ProjectWorkspace, persist = true) {
+  async function applyProjectWorkspace(
+    nextWorkspace: ProjectWorkspace,
+    persist = true,
+    closeSessionIfUnused?: string | null
+  ) {
     projectWorkspaceRef.current = nextWorkspace;
     setProjectWorkspace(nextWorkspace);
     if (persist) {
-      await persistActiveProjectLayout(nextWorkspace);
+      await persistActiveProjectLayout(nextWorkspace, { closeSessionIfUnused });
     }
   }
 
@@ -317,7 +322,18 @@ export function App() {
   }
 
   async function handleCloseProjectTab(paneId: string, tabId: string) {
-    await applyProjectWorkspace(closeProjectTab(projectWorkspaceRef.current, paneId, tabId));
+    const activeProject = getActiveProject(projectWorkspaceRef.current);
+    const closingTab = activeProject ? findProjectTab(activeProject.layout, paneId, tabId) : null;
+    const closeSessionIfUnused =
+      closingTab?.kind === "terminal" ? closingTab.sessionId ?? null : null;
+    if (closeSessionIfUnused) {
+      closingTerminalTabIdsRef.current.add(tabId);
+    }
+    await applyProjectWorkspace(
+      closeProjectTab(projectWorkspaceRef.current, paneId, tabId),
+      true,
+      closeSessionIfUnused
+    );
   }
 
   async function handleSplitPane(direction: PaneSplitDirection) {
@@ -453,6 +469,9 @@ export function App() {
         onStreamError={logDesktopError}
         onStreamMetadata={handleStreamMetadata}
         onStreamMetadataDelta={handleStreamMetadataDelta}
+        shouldCloseSessionIfUnusedOnDispose={(tabId) =>
+          closingTerminalTabIdsRef.current.delete(tabId)
+        }
         defaultProfileId={settings.profiles.defaultProfileId}
         isProfileMenuOpen={isProfileMenuOpen}
         onCloseSessionLaunchError={() => setSessionLaunchError(null)}
@@ -542,6 +561,7 @@ type AppShellProps = {
   onStreamError: (error: unknown) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
   onStreamMetadataDelta: (sessionId: string, delta: SessionMetadataDelta) => void;
+  shouldCloseSessionIfUnusedOnDispose: (tabId: string) => boolean;
   onToolMenuOpenChange: (next: boolean) => void;
   onUpdateSettings: (next: Partial<AppSettings>) => void;
   openSidebar: SidebarPanel | null;
@@ -596,6 +616,7 @@ function AppShell({
   onStreamError,
   onStreamMetadata,
   onStreamMetadataDelta,
+  shouldCloseSessionIfUnusedOnDispose,
   onToolMenuOpenChange,
   onUpdateSettings,
   openSidebar,
@@ -688,6 +709,7 @@ function AppShell({
           onStreamError={onStreamError}
           onStreamMetadata={onStreamMetadata}
           onStreamMetadataDelta={onStreamMetadataDelta}
+          shouldCloseSessionIfUnusedOnDispose={shouldCloseSessionIfUnusedOnDispose}
           onUpdateSettings={onUpdateSettings}
           profiles={profiles}
           projectWorkspace={projectWorkspace}
@@ -759,7 +781,10 @@ function getSystemLocale() {
   return navigator.languages?.[0] ?? navigator.language;
 }
 
-async function persistActiveProjectLayout(workspace: ProjectWorkspace) {
+async function persistActiveProjectLayout(
+  workspace: ProjectWorkspace,
+  options?: { closeSessionIfUnused?: string | null }
+) {
   const activeProject = getActiveProject(workspace);
   if (!activeProject) {
     return;
@@ -769,7 +794,8 @@ async function persistActiveProjectLayout(workspace: ProjectWorkspace) {
     request: {
       projectId: activeProject.projectId,
       activePaneId: activeProject.activePaneId,
-      layout: activeProject.layout
+      layout: activeProject.layout,
+      closeSessionIfUnused: options?.closeSessionIfUnused ?? null
     }
   });
 }
@@ -810,6 +836,17 @@ function findActiveProjectTab(node: ProjectPaneNode, paneId: string): ProjectTab
   }
 
   return findActiveProjectTab(node.first, paneId) ?? findActiveProjectTab(node.second, paneId);
+}
+
+function findProjectTab(node: ProjectPaneNode, paneId: string, tabId: string): ProjectTab | null {
+  if (node.type === "leaf") {
+    if (node.paneId !== paneId) {
+      return null;
+    }
+    return node.tabs.find((tab) => tab.tabId === tabId) ?? null;
+  }
+
+  return findProjectTab(node.first, paneId, tabId) ?? findProjectTab(node.second, paneId, tabId);
 }
 
 function patchSessionMetadata(

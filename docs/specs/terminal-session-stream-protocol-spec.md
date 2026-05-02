@@ -302,6 +302,7 @@ interface AttachViewerResponse {
 ```ts
 interface DetachViewerRequest {
   viewerId: string;
+  closeSessionIfUnused?: boolean;
 }
 ```
 
@@ -309,6 +310,7 @@ interface DetachViewerRequest {
 
 1. 正常关闭时显式 detach。
 2. 连接断开时后端也必须回收 viewer。
+3. `closeSessionIfUnused` 仅用于“关闭终端标签页”场景；daemon 会在 detach 后检查当前 session 是否既没有 attached viewer，也没有任何 project terminal tab 引用，满足时才关闭 session。
 
 ### 10.3 请求：`sessions.viewerAck`
 

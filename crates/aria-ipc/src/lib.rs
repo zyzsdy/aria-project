@@ -184,6 +184,8 @@ pub struct UpdateProjectLayoutRequest {
     pub project_id: ProjectId,
     pub active_pane_id: PaneId,
     pub layout: ProjectPaneNode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub close_session_if_unused: Option<SessionId>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -663,6 +665,8 @@ pub struct AttachViewerResponse {
 #[serde(rename_all = "camelCase")]
 pub struct DetachViewerRequest {
     pub viewer_id: ViewerId,
+    #[serde(default)]
+    pub close_session_if_unused: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

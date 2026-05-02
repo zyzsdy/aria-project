@@ -295,7 +295,41 @@ describe("TerminalTabSurface", () => {
     });
   });
 
-  function renderSurface(settingsOverride?: Partial<ReturnType<typeof createPlatformDefaultSettings>>) {
+  it("passes close-if-unused intent to the stream controller during closed-tab cleanup", async () => {
+    renderSurface(undefined, () => true);
+    await flushAsyncWork();
+
+    act(() => {
+      root?.unmount();
+      root = null;
+    });
+
+    expect(testState.controller.dispose).toHaveBeenCalledWith({
+      closeSessionIfUnused: true
+    });
+  });
+
+  it("notifies the app to refresh sessions after a close-if-unused cleanup finishes", async () => {
+    const onStreamDetached = vi.fn();
+    renderSurface(undefined, () => true, { onStreamDetached });
+    await flushAsyncWork();
+
+    act(() => {
+      root?.unmount();
+      root = null;
+    });
+    await flushAsyncWork();
+
+    expect(onStreamDetached).toHaveBeenCalledWith("session-a");
+  });
+
+  function renderSurface(
+    settingsOverride?: Partial<ReturnType<typeof createPlatformDefaultSettings>>,
+    shouldCloseSessionIfUnusedOnDispose?: () => boolean,
+    callbacks?: {
+      onStreamDetached?: (sessionId: string) => void;
+    }
+  ) {
     const settings = {
       ...createPlatformDefaultSettings("windows"),
       ...settingsOverride,
@@ -329,10 +363,11 @@ describe("TerminalTabSurface", () => {
       root?.render(
         <TerminalTabSurfaceComponent
           isActive={true}
-          onStreamDetached={() => undefined}
+          onStreamDetached={callbacks?.onStreamDetached ?? (() => undefined)}
           onStreamError={() => undefined}
           onStreamMetadata={() => undefined}
           onStreamMetadataDelta={() => undefined}
+          shouldCloseSessionIfUnusedOnDispose={shouldCloseSessionIfUnusedOnDispose}
           sessionId="session-a"
           settings={settings}
         />

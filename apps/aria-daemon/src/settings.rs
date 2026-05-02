@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use aria_ipc::{
     platform_builtin_profiles, platform_default_profile_id, AppSettings, AppearanceSettings,
     LocalizationSettings, ProfileSource, ProfilesSettings, ResetSettingsGroupRequest,
-    SettingsGroup, ShellProfile, TerminalSettings, UpdateAppSettingsPayload,
-    UpdateSettingsRequest, WorkspaceSettings,
+    SettingsGroup, ShellProfile, TerminalSettings, UpdateAppSettingsPayload, UpdateSettingsRequest,
+    WorkspaceSettings,
 };
 use std::{
     collections::HashMap,
@@ -55,8 +55,8 @@ fn load_settings_file(path: &Path) -> Result<AppSettings> {
     let contents = fs::read_to_string(path)
         .with_context(|| format!("read settings file {}", path.display()))?;
 
-    let mut settings: AppSettings =
-        toml::from_str(&contents).with_context(|| format!("parse settings file {}", path.display()))?;
+    let mut settings: AppSettings = toml::from_str(&contents)
+        .with_context(|| format!("parse settings file {}", path.display()))?;
     reconcile_app_settings(&mut settings);
     Ok(settings)
 }
@@ -184,7 +184,11 @@ fn reconcile_profiles(profiles: &ProfilesSettings) -> ProfilesSettings {
         profiles
             .items
             .iter()
-            .filter(|profile| !builtin_ids.iter().any(|builtin_id| builtin_id == &profile.id))
+            .filter(|profile| {
+                !builtin_ids
+                    .iter()
+                    .any(|builtin_id| builtin_id == &profile.id)
+            })
             .map(|profile| ShellProfile {
                 id: profile.id.clone(),
                 source: ProfileSource::Custom,
@@ -219,7 +223,11 @@ mod tests {
         ProfilesSettingsPatch, SettingsGroup, ShellProfile, TerminalSettingsPatch,
         UpdateAppSettingsPayload, WorkspaceSettingsPatch,
     };
-    use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn apply_settings_patch_updates_only_requested_fields() {
@@ -264,22 +272,21 @@ mod tests {
             aria_ipc::CloseConfirmation::Never
         );
         assert_eq!(settings.localization.locale, "ja-JP");
-        assert_eq!(settings.appearance.theme_preset, aria_ipc::ThemePreset::North);
+        assert_eq!(
+            settings.appearance.theme_preset,
+            aria_ipc::ThemePreset::North
+        );
         assert_eq!(settings.profiles.default_profile_id, "custom:fish");
-        assert!(
-            settings
-                .profiles
-                .items
-                .iter()
-                .any(|profile| profile.id == "custom:fish")
-        );
-        assert!(
-            platform_builtin_profiles().iter().all(|profile| settings
-                .profiles
-                .items
-                .iter()
-                .any(|existing| existing.id == profile.id))
-        );
+        assert!(settings
+            .profiles
+            .items
+            .iter()
+            .any(|profile| profile.id == "custom:fish"));
+        assert!(platform_builtin_profiles().iter().all(|profile| settings
+            .profiles
+            .items
+            .iter()
+            .any(|existing| existing.id == profile.id)));
     }
 
     #[test]
@@ -302,7 +309,10 @@ mod tests {
 
         reset_settings_group(&mut settings, SettingsGroup::Localization);
 
-        assert_eq!(settings.localization, aria_ipc::LocalizationSettings::default());
+        assert_eq!(
+            settings.localization,
+            aria_ipc::LocalizationSettings::default()
+        );
         assert_eq!(settings.terminal.scrollback_lines, 5_000);
         assert_eq!(settings.profiles.default_profile_id, "custom:fish");
     }
@@ -324,8 +334,11 @@ mod tests {
             },
             ..AppSettings::default()
         };
-        fs::write(&path, toml::to_string_pretty(&settings).expect("serialize settings"))
-            .expect("write settings");
+        fs::write(
+            &path,
+            toml::to_string_pretty(&settings).expect("serialize settings"),
+        )
+        .expect("write settings");
 
         let loaded = load_settings_file(&path).expect("load settings");
 
@@ -333,13 +346,11 @@ mod tests {
             loaded.profiles.default_profile_id,
             platform_default_profile_id().to_string()
         );
-        assert!(
-            platform_builtin_profiles().iter().all(|profile| loaded
-                .profiles
-                .items
-                .iter()
-                .any(|existing| existing.id == profile.id))
-        );
+        assert!(platform_builtin_profiles().iter().all(|profile| loaded
+            .profiles
+            .items
+            .iter()
+            .any(|existing| existing.id == profile.id)));
 
         remove_temp_settings(&path);
     }
@@ -373,13 +384,11 @@ mod tests {
             updated.profiles.default_profile_id,
             platform_default_profile_id().to_string()
         );
-        assert!(
-            platform_builtin_profiles().iter().all(|profile| updated
-                .profiles
-                .items
-                .iter()
-                .any(|existing| existing.id == profile.id))
-        );
+        assert!(platform_builtin_profiles().iter().all(|profile| updated
+            .profiles
+            .items
+            .iter()
+            .any(|existing| existing.id == profile.id)));
 
         remove_temp_settings(&path);
     }

@@ -52,13 +52,14 @@ enum SessionCommand {
         stream: mpsc::UnboundedSender<SessionStreamFrame>,
         reply: oneshot::Sender<Result<AttachViewerResponse>>,
     },
-    DetachViewer(DetachViewerRequest, oneshot::Sender<Result<()>>),
+    DetachViewer(DetachViewerRequest, oneshot::Sender<Result<SessionId>>),
     ViewerAck(ViewerAckRequest, oneshot::Sender<Result<()>>),
     ReadScrollback(
         ReadScrollbackRequest,
         oneshot::Sender<Result<ReadScrollbackResponse>>,
     ),
     Shutdown(oneshot::Sender<Result<()>>),
+    ShutdownIfNoViewers(oneshot::Sender<Result<bool>>),
     Rename(String, oneshot::Sender<Result<()>>),
     ProcessOutput(Vec<u8>),
     ProcessExit(Option<u32>),
@@ -281,14 +282,20 @@ impl SessionManager {
         Ok((response, stream_rx))
     }
 
-    pub async fn detach_viewer(&self, request: DetachViewerRequest) -> Result<EmptyResponse> {
+    pub async fn detach_viewer_with_session(
+        &self,
+        request: DetachViewerRequest,
+    ) -> Result<SessionId> {
         let viewer_id = request.viewer_id;
         self.with_viewer(request.viewer_id, move |handle| async move {
             let (reply_tx, reply_rx) = oneshot::channel();
             handle
                 .sender
                 .send(SessionCommand::DetachViewer(
-                    DetachViewerRequest { viewer_id },
+                    DetachViewerRequest {
+                        viewer_id,
+                        close_session_if_unused: false,
+                    },
                     reply_tx,
                 ))
                 .await
@@ -297,8 +304,42 @@ impl SessionManager {
                 .await
                 .map_err(|_| anyhow!("session actor dropped"))?
         })
-        .await?;
+        .await
+    }
+
+    pub async fn detach_viewer(&self, request: DetachViewerRequest) -> Result<EmptyResponse> {
+        self.detach_viewer_with_session(request).await?;
         Ok(EmptyResponse {})
+    }
+
+    pub async fn close_if_no_viewers(&self, session_id: SessionId) -> Result<bool> {
+        let Some(handle) = self.sessions.write().await.remove(&session_id) else {
+            return Ok(false);
+        };
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if handle
+            .sender
+            .send(SessionCommand::ShutdownIfNoViewers(reply_tx))
+            .await
+            .is_err()
+        {
+            return Ok(false);
+        }
+        let result = match reply_rx.await {
+            Ok(result) => result,
+            Err(_) => return Ok(false),
+        };
+        match result {
+            Ok(true) => Ok(true),
+            Ok(false) => {
+                self.sessions.write().await.insert(session_id, handle);
+                Ok(false)
+            }
+            Err(error) => {
+                self.sessions.write().await.insert(session_id, handle);
+                Err(error)
+            }
+        }
     }
 
     pub async fn viewer_ack(&self, request: ViewerAckRequest) -> Result<EmptyResponse> {
@@ -398,16 +439,16 @@ impl SessionManager {
             .ok_or_else(|| anyhow!("unknown session {}", session_id))
     }
 
-    async fn with_viewer<F, Fut>(&self, viewer_id: ViewerId, f: F) -> Result<()>
+    async fn with_viewer<F, Fut, T>(&self, viewer_id: ViewerId, f: F) -> Result<T>
     where
         F: Fn(SessionHandle) -> Fut,
-        Fut: std::future::Future<Output = Result<()>>,
+        Fut: std::future::Future<Output = Result<T>>,
     {
         let handles = self.sessions.read().await.clone();
         let mut last_error = None;
         for handle in handles.into_values() {
             match f(handle).await {
-                Ok(()) => return Ok(()),
+                Ok(value) => return Ok(value),
                 Err(error) if error.to_string().contains("unknown viewer") => {
                     last_error = Some(error);
                 }
@@ -498,6 +539,14 @@ async fn run_session_actor(mut actor: SessionActor, mut receiver: mpsc::Receiver
             SessionCommand::Shutdown(reply) => {
                 let result = actor.shutdown().await;
                 let should_exit = result.is_ok();
+                let _ = reply.send(result);
+                if should_exit {
+                    break;
+                }
+            }
+            SessionCommand::ShutdownIfNoViewers(reply) => {
+                let result = actor.shutdown_if_no_viewers().await;
+                let should_exit = matches!(result, Ok(true));
                 let _ = reply.send(result);
                 if should_exit {
                     break;
@@ -605,10 +654,10 @@ impl SessionActor {
         })
     }
 
-    fn detach_viewer(&mut self, viewer_id: ViewerId) -> Result<()> {
+    fn detach_viewer(&mut self, viewer_id: ViewerId) -> Result<SessionId> {
         self.viewers
             .remove(&viewer_id)
-            .map(|_| ())
+            .map(|_| self.session_id)
             .ok_or_else(|| anyhow!("unknown viewer {}", viewer_id))
     }
 
@@ -656,6 +705,14 @@ impl SessionActor {
         self.metadata.updated_at = unix_timestamp();
         self.notify_detached(ViewerDetachedReason::SessionClosed);
         Ok(())
+    }
+
+    async fn shutdown_if_no_viewers(&mut self) -> Result<bool> {
+        if !self.viewers.is_empty() {
+            return Ok(false);
+        }
+        self.shutdown().await?;
+        Ok(true)
     }
 
     fn process_exit(&mut self, code: Option<u32>) {
@@ -1411,6 +1468,7 @@ mod tests {
             .send(SessionCommand::DetachViewer(
                 DetachViewerRequest {
                     viewer_id: first_attach.viewer_id,
+                    close_session_if_unused: false,
                 },
                 detach_tx,
             ))
@@ -1450,6 +1508,7 @@ mod tests {
             .send(SessionCommand::DetachViewer(
                 DetachViewerRequest {
                     viewer_id: first_attach.viewer_id,
+                    close_session_if_unused: false,
                 },
                 detach_tx,
             ))
@@ -1679,6 +1738,40 @@ mod tests {
         assert!(
             !manager.sessions.read().await.contains_key(&session_id),
             "failed transport shutdown must not leave an exited session requiring a second close"
+        );
+    }
+
+    #[tokio::test]
+    async fn close_if_no_viewers_closes_unviewed_session() {
+        let manager = SessionManager::new();
+        let session_id = insert_failing_shutdown_session(&manager, TerminalSize::new(80, 24)).await;
+
+        manager
+            .close_if_no_viewers(session_id)
+            .await
+            .expect("conditional close should succeed");
+
+        assert!(
+            !manager.sessions.read().await.contains_key(&session_id),
+            "unviewed sessions should be removed from the registry"
+        );
+    }
+
+    #[tokio::test]
+    async fn close_if_no_viewers_preserves_viewed_session() {
+        let manager = SessionManager::new();
+        let session_id = insert_failing_shutdown_session(&manager, TerminalSize::new(80, 24)).await;
+        let handle = manager.handle(session_id).await.expect("session handle");
+        let (_attach, _frames) = attach_test_viewer(&handle.sender, session_id, None).await;
+
+        manager
+            .close_if_no_viewers(session_id)
+            .await
+            .expect("conditional close should succeed");
+
+        assert!(
+            manager.sessions.read().await.contains_key(&session_id),
+            "sessions with attached viewers must stay registered"
         );
     }
 

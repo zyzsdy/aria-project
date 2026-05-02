@@ -43,6 +43,7 @@ type TerminalTabSurfaceProps = {
   onStreamError: (error: unknown) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
   onStreamMetadataDelta: (sessionId: string, delta: SessionMetadataDelta) => void;
+  shouldCloseSessionIfUnusedOnDispose?: () => boolean;
 };
 
 export function TerminalTabSurface({
@@ -52,7 +53,8 @@ export function TerminalTabSurface({
   onStreamDetached,
   onStreamError,
   onStreamMetadata,
-  onStreamMetadataDelta
+  onStreamMetadataDelta,
+  shouldCloseSessionIfUnusedOnDispose
 }: TerminalTabSurfaceProps) {
   const t = useT();
   const [host, setHost] = useState<HTMLDivElement | null>(null);
@@ -196,8 +198,11 @@ export function TerminalTabSurface({
           stream: channel
         });
       },
-      detachViewer: async (viewerId) => {
-        await invoke("detach_viewer", { viewerId });
+      detachViewer: async (viewerId, options) => {
+        await invoke("detach_viewer", {
+          viewerId,
+          closeSessionIfUnused: options.closeSessionIfUnused
+        });
       },
       acknowledgeViewer: async (viewerId, seq) => {
         await invoke("viewer_ack", { viewerId, seq });
@@ -236,7 +241,16 @@ export function TerminalTabSurface({
       resizeObserver.disconnect();
       disposeResize.dispose();
       disposeData.dispose();
-      void controller.dispose();
+      const closeSessionIfUnused = shouldCloseSessionIfUnusedOnDispose?.() ?? false;
+      void controller
+        .dispose({
+          closeSessionIfUnused
+        })
+        .then(() => {
+          if (closeSessionIfUnused) {
+            streamCallbacksRef.current.onStreamDetached(sessionId);
+          }
+        });
       terminal.dispose();
     };
   }, [host, sessionId]);

@@ -169,6 +169,7 @@ export interface UpdateProjectLayoutRequest {
   readonly projectId: string;
   readonly activePaneId: string;
   readonly layout: ProjectPaneNode;
+  readonly closeSessionIfUnused?: string | null;
 }
 
 export interface AppearanceSettings {

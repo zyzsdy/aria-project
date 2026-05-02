@@ -220,6 +220,83 @@ describe("App", () => {
     expect(container?.textContent).toContain("Session unavailable");
   });
 
+  it("passes the closed terminal tab session id when persisting the updated project layout", async () => {
+    const settings = createPlatformDefaultSettings("windows");
+    const session = createSessionSummary("session-a", "Alpha");
+    let workspace = createProjectWorkspace({
+      layout: {
+        type: "leaf",
+        paneId: "pane-a",
+        activeTabId: "tab-a",
+        tabs: [
+          {
+            kind: "terminal",
+            pageId: null,
+            sessionId: "session-a",
+            tabId: "tab-a",
+            title: "Alpha"
+          }
+        ]
+      }
+    });
+
+    invokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
+      switch (command) {
+        case "get_app_settings":
+          return settings;
+        case "list_sessions":
+          return [session];
+        case "get_project_workspace":
+          return workspace;
+        case "update_project_layout":
+          {
+            const request = payload?.request as {
+              activePaneId: string;
+              closeSessionIfUnused?: string | null;
+              layout: ProjectWorkspace["projects"][number]["layout"];
+              projectId: string;
+            };
+            if (request.layout.type === "leaf" && request.layout.tabs.length === 0) {
+              expect(request.closeSessionIfUnused).toBe("session-a");
+            }
+            workspace = {
+              ...workspace,
+              projects: workspace.projects.map((project) =>
+                project.projectId === request.projectId
+                  ? {
+                      ...project,
+                      activePaneId: request.activePaneId,
+                      layout: request.layout
+                    }
+                  : project
+              )
+            };
+            return workspace;
+          }
+        default:
+          throw new Error(`Unexpected invoke command: ${command}`);
+      }
+    });
+
+    renderApp();
+    await flushAsyncWork();
+
+    const closeButton = await waitForButton("Close Alpha");
+    act(() => {
+      closeButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForInvoke("update_project_layout");
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      "update_project_layout",
+      expect.objectContaining({
+        request: expect.objectContaining({
+          closeSessionIfUnused: "session-a"
+        })
+      })
+    );
+  });
+
   it("uses app dialogs instead of window prompts for creating and renaming projects", async () => {
     const settings = createPlatformDefaultSettings("windows");
     let workspace = createProjectWorkspace();

@@ -120,7 +120,43 @@ describe("createTerminalStreamController", () => {
 
     expect(attachViewerStream).toHaveBeenCalledTimes(2);
     expect(detachViewer).toHaveBeenCalledTimes(1);
-    expect(detachViewer).toHaveBeenCalledWith("viewer-1");
+    expect(detachViewer).toHaveBeenCalledWith("viewer-1", {
+      closeSessionIfUnused: false
+    });
+  });
+
+  it("passes close-if-unused intent when disposing a closed tab viewer", async () => {
+    const detachViewer = vi.fn(async () => undefined);
+    const { controller } = createController({ detachViewer });
+
+    await controller.mount();
+    await controller.dispose({ closeSessionIfUnused: true });
+
+    expect(detachViewer).toHaveBeenCalledWith("viewer-1", {
+      closeSessionIfUnused: true
+    });
+  });
+
+  it("passes close-if-unused intent when dispose wins the attach race", async () => {
+    let resolveAttach: (response: AttachViewerResponse) => void = () => undefined;
+    const attachViewerStream = vi.fn(
+      () =>
+        new Promise<AttachViewerResponse>((resolve) => {
+          resolveAttach = resolve;
+        })
+    );
+    const detachViewer = vi.fn(async () => undefined);
+    const { controller } = createController({ attachViewerStream, detachViewer });
+
+    const mountPromise = controller.mount();
+    const disposePromise = controller.dispose({ closeSessionIfUnused: true });
+    resolveAttach(createAttachViewerResponse("viewer-1"));
+    await mountPromise;
+    await disposePromise;
+
+    expect(detachViewer).toHaveBeenCalledWith("viewer-1", {
+      closeSessionIfUnused: true
+    });
   });
 
   it("forwards stream metadata and detachment events to app callbacks", async () => {

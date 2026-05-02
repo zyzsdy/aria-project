@@ -26,6 +26,7 @@ type WorkbenchMainProps = {
   onStreamError: (error: unknown) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
   onStreamMetadataDelta: (sessionId: string, delta: SessionMetadataDelta) => void;
+  shouldCloseSessionIfUnusedOnDispose: (tabId: string) => boolean;
   onActivatePane: (paneId: string) => void;
   onCloseProjectTab: (paneId: string, tabId: string) => void;
   onProjectLayoutChange: (layout: ProjectPaneNode, activePaneId: string) => void;
@@ -50,6 +51,7 @@ export function WorkbenchMain({
   onStreamError,
   onStreamMetadata,
   onStreamMetadataDelta,
+  shouldCloseSessionIfUnusedOnDispose,
   onActivatePane,
   onCloseProjectTab,
   onProjectLayoutChange,
@@ -83,6 +85,7 @@ export function WorkbenchMain({
             onStreamError={onStreamError}
             onStreamMetadata={onStreamMetadata}
             onStreamMetadataDelta={onStreamMetadataDelta}
+            shouldCloseSessionIfUnusedOnDispose={shouldCloseSessionIfUnusedOnDispose}
             onUpdateSettings={onUpdateSettings}
             selectedSettingsGroup={selectedSettingsGroup}
             settings={settings}

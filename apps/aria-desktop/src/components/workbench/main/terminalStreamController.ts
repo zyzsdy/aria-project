@@ -31,7 +31,10 @@ type CreateTerminalStreamControllerOptions = {
   attachViewerStream: (
     args: AttachViewerStreamArgs
   ) => Promise<Pick<AttachViewerResponse, "viewerId">>;
-  detachViewer: (viewerId: string) => Promise<void>;
+  detachViewer: (
+    viewerId: string,
+    options: { closeSessionIfUnused: boolean }
+  ) => Promise<void>;
   acknowledgeViewer: (viewerId: string, seq: number) => Promise<void>;
   onStreamStateChange: (state: StreamState) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
@@ -61,6 +64,7 @@ export function createTerminalStreamController({
   let scheduledSeq = 0;
   let appliedSeq = 0;
   let reconnectPromise: Promise<void> | null = null;
+  let closeSessionIfUnusedOnDispose = false;
 
   const setStreamState = (nextState: StreamState) => {
     if (streamState === nextState) {
@@ -136,7 +140,9 @@ export function createTerminalStreamController({
       });
 
       if (disposed || revision !== connectRevision) {
-        await detachViewer(response.viewerId).catch(() => undefined);
+        await detachViewer(response.viewerId, {
+          closeSessionIfUnused: closeSessionIfUnusedOnDispose
+        }).catch(() => undefined);
         return;
       }
 
@@ -163,7 +169,9 @@ export function createTerminalStreamController({
       scheduledSeq = appliedSeq;
 
       if (currentViewerId) {
-        await detachViewer(currentViewerId).catch(() => undefined);
+        await detachViewer(currentViewerId, { closeSessionIfUnused: false }).catch(
+          () => undefined
+        );
       }
 
       if (!disposed) {
@@ -195,10 +203,11 @@ export function createTerminalStreamController({
       }
       terminal.blur?.();
     },
-    async dispose() {
+    async dispose(options?: { closeSessionIfUnused?: boolean }) {
       if (disposed) {
         return;
       }
+      closeSessionIfUnusedOnDispose = Boolean(options?.closeSessionIfUnused);
       disposed = true;
       connectRevision += 1;
       const currentViewerId = viewerId;
@@ -207,7 +216,9 @@ export function createTerminalStreamController({
       if (!currentViewerId) {
         return;
       }
-      await detachViewer(currentViewerId).catch(() => undefined);
+      await detachViewer(currentViewerId, {
+        closeSessionIfUnused: closeSessionIfUnusedOnDispose
+      }).catch(() => undefined);
     }
   };
 }

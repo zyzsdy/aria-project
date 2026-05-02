@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use aria_ipc::{
     CreateProjectRequest, ProjectPane, ProjectPaneNode, ProjectSelector, ProjectSummary,
-    ProjectWorkspace, RenameProjectRequest, UpdateProjectLayoutRequest,
+    ProjectTabKind, ProjectWorkspace, RenameProjectRequest, UpdateProjectLayoutRequest,
 };
-use aria_model::{PaneId, ProjectId};
+use aria_model::{PaneId, ProjectId, SessionId};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -123,6 +123,14 @@ impl ProjectStore {
         project.layout = reconcile_pane_node(request.layout);
         save_workspace_file(&self.path, &workspace)?;
         Ok(workspace.clone())
+    }
+
+    pub async fn has_session_reference(&self, session_id: SessionId) -> bool {
+        let workspace = self.workspace.read().await;
+        workspace
+            .projects
+            .iter()
+            .any(|project| pane_node_has_session_reference(&project.layout, session_id))
     }
 }
 
@@ -249,6 +257,19 @@ fn pane_tab_count(node: &ProjectPaneNode) -> usize {
     }
 }
 
+fn pane_node_has_session_reference(node: &ProjectPaneNode, session_id: SessionId) -> bool {
+    match node {
+        ProjectPaneNode::Leaf(pane) => pane
+            .tabs
+            .iter()
+            .any(|tab| tab.kind == ProjectTabKind::Terminal && tab.session_id == Some(session_id)),
+        ProjectPaneNode::Split { first, second, .. } => {
+            pane_node_has_session_reference(first, session_id)
+                || pane_node_has_session_reference(second, session_id)
+        }
+    }
+}
+
 fn clean_project_name(name: String) -> String {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -305,6 +326,7 @@ mod tests {
             .update_layout(UpdateProjectLayoutRequest {
                 project_id,
                 active_pane_id: pane_id,
+                close_session_if_unused: None,
                 layout: ProjectPaneNode::Leaf(ProjectPane {
                     pane_id,
                     active_tab_id: Some(tab_id),
@@ -342,6 +364,7 @@ mod tests {
             .update_layout(UpdateProjectLayoutRequest {
                 project_id,
                 active_pane_id: pane_id,
+                close_session_if_unused: None,
                 layout: ProjectPaneNode::Leaf(ProjectPane {
                     pane_id,
                     active_tab_id: Some(tab_id),
@@ -387,6 +410,86 @@ mod tests {
             .projects
             .iter()
             .all(|project| project.project_id != created.project_id));
+        remove_temp_projects(&path);
+    }
+
+    #[tokio::test]
+    async fn project_store_detects_session_references_across_all_projects() {
+        let path = temp_projects_path("references");
+        let store = ProjectStore::load(&path).expect("load store");
+        let workspace = store.get().await;
+        let first_project_id = workspace.active_project_id;
+        let referenced_session_id = SessionId::new();
+        let html_only_session_id = SessionId::new();
+        let missing_session_id = SessionId::new();
+        let pane_a = PaneId::new();
+        let pane_b = PaneId::new();
+
+        store
+            .create("Second".to_string())
+            .await
+            .expect("create project");
+        let second_project_id = store
+            .get()
+            .await
+            .projects
+            .iter()
+            .find(|project| project.project_id != first_project_id)
+            .expect("second project")
+            .project_id;
+
+        store
+            .update_layout(UpdateProjectLayoutRequest {
+                project_id: first_project_id,
+                active_pane_id: pane_a,
+                close_session_if_unused: None,
+                layout: ProjectPaneNode::Leaf(ProjectPane {
+                    pane_id: pane_a,
+                    active_tab_id: Some(ProjectTabId::new()),
+                    tabs: vec![ProjectTab {
+                        kind: ProjectTabKind::Html,
+                        page_id: Some(HtmlPageId::Settings),
+                        tab_id: ProjectTabId::new(),
+                        title: "Settings".to_string(),
+                        session_id: Some(html_only_session_id),
+                    }],
+                }),
+            })
+            .await
+            .expect("update first project");
+
+        store
+            .update_layout(UpdateProjectLayoutRequest {
+                project_id: second_project_id,
+                active_pane_id: pane_b,
+                close_session_if_unused: None,
+                layout: ProjectPaneNode::Leaf(ProjectPane {
+                    pane_id: pane_b,
+                    active_tab_id: Some(ProjectTabId::new()),
+                    tabs: vec![
+                        ProjectTab {
+                            kind: ProjectTabKind::Terminal,
+                            page_id: None,
+                            tab_id: ProjectTabId::new(),
+                            title: "Shell".to_string(),
+                            session_id: Some(referenced_session_id),
+                        },
+                        ProjectTab {
+                            kind: ProjectTabKind::Terminal,
+                            page_id: None,
+                            tab_id: ProjectTabId::new(),
+                            title: "Missing".to_string(),
+                            session_id: None,
+                        },
+                    ],
+                }),
+            })
+            .await
+            .expect("update second project");
+
+        assert!(store.has_session_reference(referenced_session_id).await);
+        assert!(!store.has_session_reference(html_only_session_id).await);
+        assert!(!store.has_session_reference(missing_session_id).await);
         remove_temp_projects(&path);
     }
 

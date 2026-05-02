@@ -25,6 +25,7 @@ describe("WorkbenchMain", () => {
         onStreamError={() => undefined}
         onStreamMetadata={() => undefined}
         onStreamMetadataDelta={() => undefined}
+        shouldCloseSessionIfUnusedOnDispose={() => false}
         onResetSettingsGroup={() => undefined}
         onSelectProjectTab={() => undefined}
         onSelectSettingsGroup={() => undefined}
@@ -58,6 +59,7 @@ describe("WorkbenchMain", () => {
         onStreamError={() => undefined}
         onStreamMetadata={() => undefined}
         onStreamMetadataDelta={() => undefined}
+        shouldCloseSessionIfUnusedOnDispose={() => false}
         onResetSettingsGroup={() => undefined}
         onSelectProjectTab={() => undefined}
         onSelectSettingsGroup={() => undefined}

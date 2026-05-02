@@ -229,7 +229,11 @@ async fn attach_session_stream(
 }
 
 #[tauri::command]
-async fn detach_viewer(state: State<'_, DesktopState>, viewer_id: String) -> Result<(), String> {
+async fn detach_viewer(
+    state: State<'_, DesktopState>,
+    viewer_id: String,
+    close_session_if_unused: Option<bool>,
+) -> Result<(), String> {
     state
         .daemon
         .ensure_ready()
@@ -241,7 +245,10 @@ async fn detach_viewer(state: State<'_, DesktopState>, viewer_id: String) -> Res
     state
         .daemon
         .client
-        .detach_viewer(DetachViewerRequest { viewer_id })
+        .detach_viewer(DetachViewerRequest {
+            viewer_id,
+            close_session_if_unused: close_session_if_unused.unwrap_or(false),
+        })
         .await
         .map(|_| ())
         .map_err(|error| error.to_string())
@@ -608,7 +615,10 @@ impl DaemonController {
             }
 
             let _ = client
-                .detach_viewer(DetachViewerRequest { viewer_id })
+                .detach_viewer(DetachViewerRequest {
+                    viewer_id,
+                    close_session_if_unused: false,
+                })
                 .await;
         });
 
