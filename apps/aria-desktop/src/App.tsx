@@ -704,6 +704,7 @@ function AppShell({
   return (
     <div
       className="app-shell-root"
+      data-theme-mode={settings.appearance.themeMode}
       onContextMenu={(event) => {
         event.preventDefault();
       }}
@@ -711,7 +712,6 @@ function AppShell({
       <main
         className={`workbench ${openSidebar ? "workbench-sidebar-open" : "workbench-sidebar-closed"}`}
         data-theme={settings.appearance.themePreset}
-        data-theme-mode={settings.appearance.themeMode}
       >
         <TitleBar />
         <ActivityRail
