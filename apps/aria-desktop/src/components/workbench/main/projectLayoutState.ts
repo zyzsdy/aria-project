@@ -158,6 +158,7 @@ export function closeProjectTab(
   }
 
   let changed = false;
+  let closedPaneIsEmpty = false;
   const layout = updateLeaf(project.layout, paneId, (pane) => {
     const closingIndex = pane.tabs.findIndex((tab) => tab.tabId === tabId);
     if (closingIndex === -1) {
@@ -166,6 +167,7 @@ export function closeProjectTab(
 
     changed = true;
     const tabs = pane.tabs.filter((tab) => tab.tabId !== tabId);
+    closedPaneIsEmpty = tabs.length === 0;
     const activeTabId =
       pane.activeTabId === tabId
         ? tabs[closingIndex - 1]?.tabId ?? tabs[closingIndex]?.tabId ?? null
@@ -177,9 +179,18 @@ export function closeProjectTab(
     return workspace;
   }
 
+  const nextLayout =
+    closedPaneIsEmpty && countPanes(project.layout) > 1
+      ? removePane(layout, paneId) ?? layout
+      : layout;
+  const activePaneId = paneExists(nextLayout, project.activePaneId)
+    ? project.activePaneId
+    : findFirstPaneId(nextLayout);
+
   return updateProject(workspace, project.projectId, {
     ...project,
-    layout
+    activePaneId,
+    layout: nextLayout
   });
 }
 
@@ -307,6 +318,39 @@ function replacePane(
     first: replacePane(node.first, paneId, replacement),
     second: replacePane(node.second, paneId, replacement)
   };
+}
+
+function removePane(node: ProjectPaneNode, paneId: string): ProjectPaneNode | null {
+  if (node.type === "leaf") {
+    return node.paneId === paneId ? null : node;
+  }
+
+  const first = removePane(node.first, paneId);
+  const second = removePane(node.second, paneId);
+  if (!first) {
+    return second;
+  }
+  if (!second) {
+    return first;
+  }
+
+  return {
+    ...node,
+    first,
+    second
+  };
+}
+
+function countPanes(node: ProjectPaneNode): number {
+  return node.type === "leaf" ? 1 : countPanes(node.first) + countPanes(node.second);
+}
+
+function paneExists(node: ProjectPaneNode, paneId: string): boolean {
+  if (node.type === "leaf") {
+    return node.paneId === paneId;
+  }
+
+  return paneExists(node.first, paneId) || paneExists(node.second, paneId);
 }
 
 function findTab(

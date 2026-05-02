@@ -213,6 +213,148 @@ describe("project layout state", () => {
     expect(closed).toEqual(selected);
   });
 
+  it("collapses a split when closing the only tab in one pane", () => {
+    const workspace = createWorkspaceWithSplit({
+      activeProjectId: "project-a",
+      activePaneId: "pane-b",
+      firstTabs: [terminalTab("tab-a", "session-a")],
+      firstActiveTabId: "tab-a",
+      secondTabs: [terminalTab("tab-b", "session-b")],
+      secondActiveTabId: "tab-b"
+    });
+
+    const next = closeProjectTab(workspace, "pane-b", "tab-b");
+    const project = next.projects[0];
+
+    expect(project.activePaneId).toBe("pane-a");
+    expect(project.layout).toEqual({
+      type: "leaf",
+      paneId: "pane-a",
+      activeTabId: "tab-a",
+      tabs: [terminalTab("tab-a", "session-a")]
+    });
+  });
+
+  it("collapses only the affected branch when closing the last tab in a nested pane", () => {
+    const workspace: ProjectWorkspace = {
+      activeProjectId: "project-a",
+      projects: [
+        {
+          projectId: "project-a",
+          name: "Default Project",
+          activePaneId: "pane-c",
+          layout: {
+            type: "split",
+            splitId: "split-root",
+            direction: "horizontal",
+            ratio: 0.4,
+            first: {
+              type: "leaf",
+              paneId: "pane-a",
+              activeTabId: "tab-a",
+              tabs: [terminalTab("tab-a", "session-a")]
+            },
+            second: {
+              type: "split",
+              splitId: "split-nested",
+              direction: "vertical",
+              ratio: 0.5,
+              first: {
+                type: "leaf",
+                paneId: "pane-b",
+                activeTabId: "tab-b",
+                tabs: [terminalTab("tab-b", "session-b")]
+              },
+              second: {
+                type: "leaf",
+                paneId: "pane-c",
+                activeTabId: "tab-c",
+                tabs: [terminalTab("tab-c", "session-c")]
+              }
+            }
+          }
+        }
+      ]
+    };
+
+    const next = closeProjectTab(workspace, "pane-c", "tab-c");
+    const project = next.projects[0];
+
+    expect(project.activePaneId).toBe("pane-a");
+    expect(project.layout).toEqual({
+      type: "split",
+      splitId: "split-root",
+      direction: "horizontal",
+      ratio: 0.4,
+      first: {
+        type: "leaf",
+        paneId: "pane-a",
+        activeTabId: "tab-a",
+        tabs: [terminalTab("tab-a", "session-a")]
+      },
+      second: {
+        type: "leaf",
+        paneId: "pane-b",
+        activeTabId: "tab-b",
+        tabs: [terminalTab("tab-b", "session-b")]
+      }
+    });
+  });
+
+  it("keeps the pane when closing the only tab in the only pane", () => {
+    const workspace: ProjectWorkspace = {
+      activeProjectId: "project-a",
+      projects: [
+        {
+          projectId: "project-a",
+          name: "Default Project",
+          activePaneId: "pane-a",
+          layout: {
+            type: "leaf",
+            paneId: "pane-a",
+            activeTabId: "tab-a",
+            tabs: [terminalTab("tab-a", "session-a")]
+          }
+        }
+      ]
+    };
+
+    const next = closeProjectTab(workspace, "pane-a", "tab-a");
+
+    expect(next.projects[0].activePaneId).toBe("pane-a");
+    expect(next.projects[0].layout).toEqual({
+      type: "leaf",
+      paneId: "pane-a",
+      activeTabId: null,
+      tabs: []
+    });
+  });
+
+  it("keeps a pane open when closing one of multiple tabs", () => {
+    const workspace = createWorkspaceWithSplit({
+      activeProjectId: "project-a",
+      activePaneId: "pane-a",
+      firstTabs: [terminalTab("tab-a", "session-a"), terminalTab("tab-b", "session-b")],
+      firstActiveTabId: "tab-b",
+      secondTabs: [terminalTab("tab-c", "session-c")],
+      secondActiveTabId: "tab-c"
+    });
+
+    const next = closeProjectTab(workspace, "pane-a", "tab-b");
+    const project = next.projects[0];
+
+    expect(project.activePaneId).toBe("pane-a");
+    expect(project.layout.type).toBe("split");
+    if (project.layout.type === "split" && project.layout.first.type === "leaf") {
+      expect(project.layout.first).toEqual({
+        type: "leaf",
+        paneId: "pane-a",
+        activeTabId: "tab-a",
+        tabs: [terminalTab("tab-a", "session-a")]
+      });
+    }
+  });
+
   it("updates a project layout and clamps split ratios", () => {
     const workspace = createEmptyProjectWorkspace();
     const project = workspace.projects[0];
@@ -287,5 +429,15 @@ function createWorkspaceWithSplit({
         }
       }
     ]
+  };
+}
+
+function terminalTab(tabId: string, sessionId: string): ProjectTab {
+  return {
+    kind: "terminal",
+    pageId: null,
+    sessionId,
+    tabId,
+    title: sessionId
   };
 }
