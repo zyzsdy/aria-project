@@ -1,4 +1,6 @@
 [settings.fields]
+theme_mode = "Theme"
+color_scheme = "Color scheme"
 arguments = "Arguments"
 bell_mode = "Bell mode"
 close_confirmation = "Close confirmation"
@@ -53,6 +55,15 @@ paste = "Copy and paste"
 open_empty = "Open empty"
 restore_previous = "Restore previous"
 
+[settings.options.theme_mode]
+system = "System"
+light = "Light"
+dark = "Dark"
+
+[settings.categories]
+aria_terminal = "Aria Terminal"
+classic = "Classic"
+
 [settings.page]
 kicker = "Workspace Settings"
 sections_aria_label = "Settings sections"
@@ -98,3 +109,51 @@ label = "North"
 [settings.themes.oxide]
 blurb = "Warm amber neutrals with softer glow."
 label = "Oxide"
+
+[settings.themes.dawn]
+blurb = "Warm white base with amber accents."
+label = "Dawn"
+
+[settings.themes.snow]
+blurb = "Cool white base with blue accents."
+label = "Snow"
+
+[settings.themes.jade]
+blurb = "Natural white base with emerald accents."
+label = "Jade"
+
+[settings.themes.solarized]
+blurb = "Precision colors for machines and people."
+label = "Solarized"
+
+[settings.themes.gruvbox]
+blurb = "Retro groove with warm earth tones."
+label = "Gruvbox"
+
+[settings.themes.dracula]
+blurb = "Dark theme with vibrant colors."
+label = "Dracula"
+
+[settings.themes.monokai]
+blurb = "Classic Sublime Text color scheme."
+label = "Monokai"
+
+[settings.themes.nord]
+blurb = "Arctic, north-bluish clean aesthetic."
+label = "Nord"
+
+[settings.themes.one_dark]
+blurb = "Atom's iconic dark theme."
+label = "One Dark"
+
+[settings.themes.solarized_light]
+blurb = "Light variant of the Solarized palette."
+label = "Solarized Light"
+
+[settings.themes.one_light]
+blurb = "Atom's clean light theme."
+label = "One Light"
+
+[settings.themes.catppuccin_latte]
+blurb = "Soothing pastel light theme."
+label = "Catppuccin Latte"

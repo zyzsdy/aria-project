@@ -40,7 +40,7 @@ import { BUNDLED_CATALOG_SOURCE } from "./i18n/bundledCatalogSource";
 import { defineMessages } from "./i18n/messages";
 import { DESKTOP_I18N_NAMESPACES } from "./i18n/namespaces";
 import { I18nProvider, useT } from "./i18n/react";
-import { DEFAULT_APP_SETTINGS, cloneSettings } from "./settings/appSettings";
+import { DEFAULT_APP_SETTINGS, cloneSettings, resolveThemeMode } from "./settings/appSettings";
 import { createSettingsStore } from "./settings/settingsStore";
 
 type ToolNotice = "check_updates_unavailable" | null;
@@ -711,6 +711,7 @@ function AppShell({
       <main
         className={`workbench ${openSidebar ? "workbench-sidebar-open" : "workbench-sidebar-closed"}`}
         data-theme={settings.appearance.themePreset}
+        data-theme-mode={settings.appearance.themeMode}
       >
         <TitleBar />
         <ActivityRail

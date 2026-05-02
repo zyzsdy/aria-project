@@ -33,6 +33,8 @@ heading = "Profiles"
 copy = "組み込み shell の管理、カスタム起動プロファイルの追加、新しい session に使う既定プロファイルの選択を行います。"
 
 [settings.fields]
+theme_mode = "テーマ"
+color_scheme = "カラースキーム"
 arguments = "引数"
 font_family = "フォント"
 font_size = "フォントサイズ"
@@ -71,6 +73,54 @@ blurb = "柔らかな輝きのある、暖色のアンバーニュートラル�
 label = "フォレスト"
 blurb = "落ち着いて集中しやすい、控えめなグリーンパレット。"
 
+[settings.themes.dawn]
+label = "ドーン"
+blurb = "暖かい白地にアンバーのアクセント。"
+
+[settings.themes.snow]
+label = "スノー"
+blurb = "クールな白地にブルーのアクセント。"
+
+[settings.themes.jade]
+label = "ジェイド"
+blurb = "自然な白地にエメラルドのアクセント。"
+
+[settings.themes.solarized]
+label = "Solarized"
+blurb = "機械と人の目のために設計された精密な配色。"
+
+[settings.themes.gruvbox]
+label = "Gruvbox"
+blurb = "レトロで暖かなアーストーン。"
+
+[settings.themes.dracula]
+label = "Dracula"
+blurb = "鮮やかな色のダークテーマ。"
+
+[settings.themes.monokai]
+label = "Monokai"
+blurb = "クラシックな Sublime Text の配色。"
+
+[settings.themes.nord]
+label = "Nord"
+blurb = "北極のブルー系クリーンな美学。"
+
+[settings.themes.one_dark]
+label = "One Dark"
+blurb = "Atom の象徴的なダークテーマ。"
+
+[settings.themes.solarized_light]
+label = "Solarized Light"
+blurb = "Solarized パレットのライトバリアント。"
+
+[settings.themes.one_light]
+label = "One Light"
+blurb = "Atom のクリーンなライトテーマ。"
+
+[settings.themes.catppuccin_latte]
+label = "Catppuccin Latte"
+blurb = "穏やかなパステルのライトテーマ。"
+
 [settings.options.cursor_style]
 block = "ブロック"
 underline = "下線"
@@ -98,3 +148,12 @@ system = "システム言語を使う"
 en = "English"
 zh_cn = "简体中文"
 ja = "日本語"
+
+[settings.options.theme_mode]
+system = "システムに合わせる"
+light = "ライト"
+dark = "ダーク"
+
+[settings.categories]
+aria_terminal = "Aria Terminal"
+classic = "クラシック"

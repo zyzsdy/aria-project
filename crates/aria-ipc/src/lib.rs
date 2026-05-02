@@ -263,11 +263,32 @@ pub struct EmptyResponse {}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum ThemeMode {
+    System,
+    Light,
+    #[default]
+    Dark,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ThemePreset {
     #[default]
     North,
     Oxide,
     Forest,
+    Dawn,
+    Snow,
+    Jade,
+    Solarized,
+    Gruvbox,
+    Dracula,
+    Monokai,
+    Nord,
+    OneDark,
+    SolarizedLight,
+    OneLight,
+    CatppuccinLatte,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -334,6 +355,7 @@ pub enum SettingsGroup {
 #[serde(default)]
 #[serde(rename_all = "camelCase")]
 pub struct AppearanceSettings {
+    pub theme_mode: ThemeMode,
     pub theme_preset: ThemePreset,
     pub font_family: String,
     pub font_size: u16,
@@ -346,6 +368,7 @@ pub struct AppearanceSettings {
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
+            theme_mode: ThemeMode::Dark,
             theme_preset: ThemePreset::North,
             font_family: "Cascadia Mono".to_string(),
             font_size: 14,
@@ -476,6 +499,8 @@ impl Default for AppSettings {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppearanceSettingsPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_mode: Option<ThemeMode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub theme_preset: Option<ThemePreset>,
     #[serde(skip_serializing_if = "Option::is_none")]

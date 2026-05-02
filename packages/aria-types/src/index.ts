@@ -31,7 +31,24 @@ export const VIEWER_DETACHED_REASONS = [
   "session-closed",
   "server-shutdown"
 ] as const;
-export const APP_THEME_PRESETS = ["north", "oxide", "forest"] as const;
+export const APP_THEME_MODES = ["system", "light", "dark"] as const;
+export const APP_THEME_PRESETS = [
+  "north",
+  "oxide",
+  "forest",
+  "dawn",
+  "snow",
+  "jade",
+  "solarized",
+  "gruvbox",
+  "dracula",
+  "monokai",
+  "nord",
+  "one_dark",
+  "solarized_light",
+  "one_light",
+  "catppuccin_latte"
+] as const;
 export const CURSOR_STYLES = ["block", "underline", "bar"] as const;
 export const RIGHT_CLICK_BEHAVIORS = ["paste", "menu"] as const;
 export const BELL_MODES = ["off", "visual", "system"] as const;
@@ -61,6 +78,7 @@ export type ReplayMode = (typeof REPLAY_MODES)[number];
 export type BufferKind = (typeof BUFFER_KINDS)[number];
 export type PayloadEncoding = (typeof PAYLOAD_ENCODINGS)[number];
 export type ViewerDetachedReason = (typeof VIEWER_DETACHED_REASONS)[number];
+export type ThemeMode = (typeof APP_THEME_MODES)[number];
 export type ThemePreset = (typeof APP_THEME_PRESETS)[number];
 export type CursorStyle = (typeof CURSOR_STYLES)[number];
 export type RightClickBehavior = (typeof RIGHT_CLICK_BEHAVIORS)[number];
@@ -174,6 +192,7 @@ export interface UpdateProjectLayoutRequest {
 }
 
 export interface AppearanceSettings {
+  readonly themeMode: ThemeMode;
   readonly themePreset: ThemePreset;
   readonly fontFamily: string;
   readonly fontSize: number;
@@ -221,6 +240,7 @@ export interface AppSettings {
 }
 
 export interface AppearanceSettingsPatch {
+  readonly themeMode?: ThemeMode;
   readonly themePreset?: ThemePreset;
   readonly fontFamily?: string;
   readonly fontSize?: number;
@@ -260,6 +280,7 @@ export interface UpdateAppSettingsPayload {
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   appearance: {
+    themeMode: "dark",
     themePreset: "north",
     fontFamily: "Cascadia Mono",
     fontSize: 14,

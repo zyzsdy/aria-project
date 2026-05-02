@@ -16,7 +16,8 @@ import type {
   ShellProfile,
   RightClickBehavior,
   SettingsGroup,
-  StartupBehavior
+  StartupBehavior,
+  ThemeMode
 } from "@aria/types";
 import {
   BELL_MODES,
@@ -223,6 +224,130 @@ const SETTINGS_PAGE_MESSAGES = defineMessages({
     key: "settings.themes.forest.blurb",
     defaultMessage: "Muted green palette with calmer focus."
   },
+  fieldThemeMode: {
+    key: "settings.fields.theme_mode",
+    defaultMessage: "Theme"
+  },
+  fieldColorScheme: {
+    key: "settings.fields.color_scheme",
+    defaultMessage: "Color scheme"
+  },
+  themeModeSystem: {
+    key: "settings.options.theme_mode.system",
+    defaultMessage: "System"
+  },
+  themeModeLight: {
+    key: "settings.options.theme_mode.light",
+    defaultMessage: "Light"
+  },
+  themeModeDark: {
+    key: "settings.options.theme_mode.dark",
+    defaultMessage: "Dark"
+  },
+  categoryAriaTerminal: {
+    key: "settings.categories.aria_terminal",
+    defaultMessage: "Aria Terminal"
+  },
+  categoryClassic: {
+    key: "settings.categories.classic",
+    defaultMessage: "Classic"
+  },
+  themeDawnLabel: {
+    key: "settings.themes.dawn.label",
+    defaultMessage: "Dawn"
+  },
+  themeDawnBlurb: {
+    key: "settings.themes.dawn.blurb",
+    defaultMessage: "Warm white base with amber accents."
+  },
+  themeSnowLabel: {
+    key: "settings.themes.snow.label",
+    defaultMessage: "Snow"
+  },
+  themeSnowBlurb: {
+    key: "settings.themes.snow.blurb",
+    defaultMessage: "Cool white base with blue accents."
+  },
+  themeJadeLabel: {
+    key: "settings.themes.jade.label",
+    defaultMessage: "Jade"
+  },
+  themeJadeBlurb: {
+    key: "settings.themes.jade.blurb",
+    defaultMessage: "Natural white base with emerald accents."
+  },
+  themeSolarizedLabel: {
+    key: "settings.themes.solarized.label",
+    defaultMessage: "Solarized"
+  },
+  themeSolarizedBlurb: {
+    key: "settings.themes.solarized.blurb",
+    defaultMessage: "Precision colors for machines and people."
+  },
+  themeGruvboxLabel: {
+    key: "settings.themes.gruvbox.label",
+    defaultMessage: "Gruvbox"
+  },
+  themeGruvboxBlurb: {
+    key: "settings.themes.gruvbox.blurb",
+    defaultMessage: "Retro groove with warm earth tones."
+  },
+  themeDraculaLabel: {
+    key: "settings.themes.dracula.label",
+    defaultMessage: "Dracula"
+  },
+  themeDraculaBlurb: {
+    key: "settings.themes.dracula.blurb",
+    defaultMessage: "Dark theme with vibrant colors."
+  },
+  themeMonokaiLabel: {
+    key: "settings.themes.monokai.label",
+    defaultMessage: "Monokai"
+  },
+  themeMonokaiBlurb: {
+    key: "settings.themes.monokai.blurb",
+    defaultMessage: "Classic Sublime Text color scheme."
+  },
+  themeNordLabel: {
+    key: "settings.themes.nord.label",
+    defaultMessage: "Nord"
+  },
+  themeNordBlurb: {
+    key: "settings.themes.nord.blurb",
+    defaultMessage: "Arctic, north-bluish clean aesthetic."
+  },
+  themeOneDarkLabel: {
+    key: "settings.themes.one_dark.label",
+    defaultMessage: "One Dark"
+  },
+  themeOneDarkBlurb: {
+    key: "settings.themes.one_dark.blurb",
+    defaultMessage: "Atom's iconic dark theme."
+  },
+  themeSolarizedLightLabel: {
+    key: "settings.themes.solarized_light.label",
+    defaultMessage: "Solarized Light"
+  },
+  themeSolarizedLightBlurb: {
+    key: "settings.themes.solarized_light.blurb",
+    defaultMessage: "Light variant of the Solarized palette."
+  },
+  themeOneLightLabel: {
+    key: "settings.themes.one_light.label",
+    defaultMessage: "One Light"
+  },
+  themeOneLightBlurb: {
+    key: "settings.themes.one_light.blurb",
+    defaultMessage: "Atom's clean light theme."
+  },
+  themeCatppuccinLatteLabel: {
+    key: "settings.themes.catppuccin_latte.label",
+    defaultMessage: "Catppuccin Latte"
+  },
+  themeCatppuccinLatteBlurb: {
+    key: "settings.themes.catppuccin_latte.blurb",
+    defaultMessage: "Soothing pastel light theme."
+  },
   cursorStyleBlock: {
     key: "settings.options.cursor_style.block",
     defaultMessage: "Block"
@@ -357,8 +482,77 @@ export function SettingsPage({
     forest: {
       label: t(SETTINGS_PAGE_MESSAGES.themeForestLabel),
       blurb: t(SETTINGS_PAGE_MESSAGES.themeForestBlurb)
+    },
+    dawn: {
+      label: t(SETTINGS_PAGE_MESSAGES.themeDawnLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeDawnBlurb)
+    },
+    snow: {
+      label: t(SETTINGS_PAGE_MESSAGES.themeSnowLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeSnowBlurb)
+    },
+    jade: {
+      label: t(SETTINGS_PAGE_MESSAGES.themeJadeLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeJadeBlurb)
+    },
+    solarized: {
+      label: t(SETTINGS_PAGE_MESSAGES.themeSolarizedLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeSolarizedBlurb)
+    },
+    gruvbox: {
+      label: t(SETTINGS_PAGE_MESSAGES.themeGruvboxLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeGruvboxBlurb)
+    },
+    dracula: {
+      label: t(SETTINGS_PAGE_MESSAGES.themeDraculaLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeDraculaBlurb)
+    },
+    monokai: {
+      label: t(SETTINGS_PAGE_MESSAGES.themeMonokaiLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeMonokaiBlurb)
+    },
+    nord: {
+      label: t(SETTINGS_PAGE_MESSAGES.themeNordLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeNordBlurb)
+    },
+    "one_dark": {
+      label: t(SETTINGS_PAGE_MESSAGES.themeOneDarkLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeOneDarkBlurb)
+    },
+    "solarized_light": {
+      label: t(SETTINGS_PAGE_MESSAGES.themeSolarizedLightLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeSolarizedLightBlurb)
+    },
+    "one_light": {
+      label: t(SETTINGS_PAGE_MESSAGES.themeOneLightLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeOneLightBlurb)
+    },
+    "catppuccin_latte": {
+      label: t(SETTINGS_PAGE_MESSAGES.themeCatppuccinLatteLabel),
+      blurb: t(SETTINGS_PAGE_MESSAGES.themeCatppuccinLatteBlurb)
     }
   } as const;
+  const themeModeOptions = mapOptions(["system", "light", "dark"], {
+    system: t(SETTINGS_PAGE_MESSAGES.themeModeSystem),
+    light: t(SETTINGS_PAGE_MESSAGES.themeModeLight),
+    dark: t(SETTINGS_PAGE_MESSAGES.themeModeDark)
+  });
+  const colorSchemeGroups = [
+    {
+      label: t(SETTINGS_PAGE_MESSAGES.categoryAriaTerminal),
+      options: THEME_OPTIONS.filter((o) => o.category === "aria").map((o) => ({
+        value: o.id,
+        label: themeCopy[o.id].label
+      }))
+    },
+    {
+      label: t(SETTINGS_PAGE_MESSAGES.categoryClassic),
+      options: THEME_OPTIONS.filter((o) => o.category === "classic").map((o) => ({
+        value: o.id,
+        label: themeCopy[o.id].label
+      }))
+    }
+  ];
   const cursorStyleOptions = mapOptions(CURSOR_STYLES, {
     block: t(SETTINGS_PAGE_MESSAGES.cursorStyleBlock),
     underline: t(SETTINGS_PAGE_MESSAGES.cursorStyleUnderline),
@@ -417,26 +611,33 @@ export function SettingsPage({
             onReset={() => onResetGroup("appearance")}
             title={t(SETTINGS_PAGE_MESSAGES.sectionAppearanceHeading)}
           >
-            <div className="theme-card-grid">
-              {THEME_OPTIONS.map((theme) => (
-                <button
-                  key={theme.id}
-                  className={`theme-card ${settings.appearance.themePreset === theme.id ? "theme-card-active" : ""}`}
-                  onClick={() =>
-                    onUpdate({
-                      appearance: {
-                        ...settings.appearance,
-                        themePreset: theme.id
-                      }
-                    })
-                  }
-                  type="button"
-                >
-                  <span className={`theme-card-preview theme-card-preview-${theme.id}`} />
-                  <strong>{themeCopy[theme.id].label}</strong>
-                  <span>{themeCopy[theme.id].blurb}</span>
-                </button>
-              ))}
+            <div className="settings-form-grid">
+              <ChoiceSelect
+                label={t(SETTINGS_PAGE_MESSAGES.fieldThemeMode)}
+                onChange={(value) =>
+                  onUpdate({
+                    appearance: {
+                      ...settings.appearance,
+                      themeMode: value as ThemeMode
+                    }
+                  })
+                }
+                options={themeModeOptions}
+                value={settings.appearance.themeMode}
+              />
+              <GroupedChoiceSelect
+                label={t(SETTINGS_PAGE_MESSAGES.fieldColorScheme)}
+                onChange={(value) =>
+                  onUpdate({
+                    appearance: {
+                      ...settings.appearance,
+                      themePreset: value as typeof settings.appearance.themePreset
+                    }
+                  })
+                }
+                groups={colorSchemeGroups}
+                value={settings.appearance.themePreset}
+              />
             </div>
 
             <div className="settings-form-grid">
@@ -985,6 +1186,112 @@ function ChoiceSelect({ label, options, value, onChange }: ChoiceSelectProps) {
             >
               <span>{option.label}</span>
             </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type GroupedOption = {
+  value: string;
+  label: string;
+};
+
+type OptionGroup = {
+  label: string;
+  options: GroupedOption[];
+};
+
+type GroupedChoiceSelectProps = {
+  label: string;
+  groups: OptionGroup[];
+  value: string;
+  onChange: (value: string) => void;
+};
+
+function GroupedChoiceSelect({ label, groups, value, onChange }: GroupedChoiceSelectProps) {
+  const fieldId = useId();
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+
+  const allOptions = groups.flatMap((g) => g.options);
+  const selectedOption = allOptions.find((o) => o.value === value);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || shellRef.current?.contains(target)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isOpen]);
+
+  return (
+    <div ref={shellRef} className="settings-field grouped-choice-select">
+      <span id={fieldId}>{label}</span>
+      <button
+        ref={triggerRef}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-labelledby={fieldId}
+        className="choice-select-trigger"
+        onClick={() => setIsOpen((prev) => !prev)}
+        type="button"
+      >
+        <span>{selectedOption?.label ?? ""}</span>
+        <ChevronDown aria-hidden="true" size={16} strokeWidth={1.8} />
+      </button>
+      {isOpen ? (
+        <div
+          aria-labelledby={fieldId}
+          className="app-menu choice-select-menu grouped-choice-select-menu"
+          role="listbox"
+        >
+          {groups.map((group) => (
+            <div key={group.label} className="grouped-choice-select-group">
+              <span className="grouped-choice-select-group-label">{group.label}</span>
+              {group.options.map((option) => (
+                <button
+                  key={option.value}
+                  aria-selected={option.value === value}
+                  className={`app-menu-item choice-select-option ${
+                    option.value === value ? "choice-select-option-selected" : ""
+                  }`}
+                  onClick={() => {
+                    onChange(option.value);
+                    setIsOpen(false);
+                    triggerRef.current?.focus();
+                  }}
+                  role="option"
+                  type="button"
+                >
+                  <span>{option.label}</span>
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       ) : null}

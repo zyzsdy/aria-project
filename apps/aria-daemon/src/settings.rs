@@ -68,6 +68,9 @@ fn save_settings_file(path: &Path, settings: &AppSettings) -> Result<()> {
 
 fn apply_settings_patch(settings: &mut AppSettings, patch: &UpdateAppSettingsPayload) {
     if let Some(appearance) = &patch.appearance {
+        if let Some(theme_mode) = appearance.theme_mode {
+            settings.appearance.theme_mode = theme_mode;
+        }
         if let Some(theme_preset) = appearance.theme_preset {
             settings.appearance.theme_preset = theme_preset;
         }

@@ -33,6 +33,8 @@ heading = "配置"
 copy = "管理内置 shell，添加自定义启动配置，并选择新建 session 使用的默认配置。"
 
 [settings.fields]
+theme_mode = "主题"
+color_scheme = "配色方案"
 arguments = "参数"
 font_family = "字体"
 font_size = "字号"
@@ -71,10 +73,67 @@ blurb = "温暖的琥珀中性色，带来更柔和的辉光。"
 label = "森林"
 blurb = "低饱和绿色配色，视觉更平静专注。"
 
+[settings.themes.dawn]
+label = "晨曦"
+blurb = "暖白底色搭配琥珀色调。"
+
+[settings.themes.snow]
+label = "雪境"
+blurb = "冷白底色搭配蓝色调。"
+
+[settings.themes.jade]
+label = "翡翠"
+blurb = "自然白底搭配翠绿色调。"
+
+[settings.themes.solarized]
+label = "Solarized"
+blurb = "为机器和人眼设计的精确配色。"
+
+[settings.themes.gruvbox]
+label = "Gruvbox"
+blurb = "复古暖色调大地色系。"
+
+[settings.themes.dracula]
+label = "Dracula"
+blurb = "鲜艳色彩的深色主题。"
+
+[settings.themes.monokai]
+label = "Monokai"
+blurb = "经典的 Sublime Text 配色方案。"
+
+[settings.themes.nord]
+label = "Nord"
+blurb = "北极蓝调的简洁美学。"
+
+[settings.themes.one_dark]
+label = "One Dark"
+blurb = "Atom 编辑器的经典深色主题。"
+
+[settings.themes.solarized_light]
+label = "Solarized Light"
+blurb = "Solarized 配色的浅色变体。"
+
+[settings.themes.one_light]
+label = "One Light"
+blurb = "Atom 编辑器的简洁浅色主题。"
+
+[settings.themes.catppuccin_latte]
+label = "Catppuccin Latte"
+blurb = "柔和的粉彩浅色主题。"
+
 [settings.options.cursor_style]
 block = "块状"
 underline = "下划线"
 bar = "竖线"
+
+[settings.options.theme_mode]
+system = "跟随系统"
+light = "浅色"
+dark = "深色"
+
+[settings.categories]
+aria_terminal = "Aria Terminal"
+classic = "经典"
 
 [settings.options.right_click]
 paste = "复制和粘贴"
