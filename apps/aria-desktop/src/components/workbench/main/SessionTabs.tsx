@@ -4,9 +4,10 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type WheelEvent
 } from "react";
-import type { ShellProfile } from "@aria/types";
+import type { ProjectTabKind, SessionStatus, ShellProfile } from "@aria/types";
 import { ChevronDown, Plus, X } from "lucide-react";
 import { defineMessages } from "../../../i18n/messages";
 import { useT } from "../../../i18n/react";
@@ -33,11 +34,34 @@ const SESSION_TAB_MESSAGES = defineMessages({
   defaultProfile: {
     key: "workbench.sidebar.default_profile_badge",
     defaultMessage: "Default"
+  },
+  rename: {
+    key: "workbench.tabs.rename",
+    defaultMessage: "Rename"
+  },
+  splitVertical: {
+    key: "workbench.tabs.split_vertical",
+    defaultMessage: "Split vertically"
+  },
+  splitHorizontal: {
+    key: "workbench.tabs.split_horizontal",
+    defaultMessage: "Split horizontally"
+  },
+  detach: {
+    key: "workbench.tabs.detach",
+    defaultMessage: "Detach"
+  },
+  close: {
+    key: "workbench.tabs.close",
+    defaultMessage: "Close"
   }
 });
 
 type SessionTab = {
   isBackground?: boolean;
+  kind?: ProjectTabKind;
+  sessionId?: string | null;
+  status?: SessionStatus | null;
   tabId: string;
   title: string;
 };
@@ -52,6 +76,9 @@ type SessionTabsProps = {
   onCreateSessionWithProfile: (profileId: string) => void;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
+  onDetachTab?: (tabId: string, sessionId: string) => void;
+  onRenameTab?: (tabId: string, sessionId: string) => void;
+  onSplitPane?: (direction: "horizontal" | "vertical") => void;
 };
 
 export function SessionTabs({
@@ -63,13 +90,21 @@ export function SessionTabs({
   onCreateSession,
   onCreateSessionWithProfile,
   onSelectTab,
-  onCloseTab
+  onCloseTab,
+  onDetachTab,
+  onRenameTab,
+  onSplitPane
 }: SessionTabsProps) {
   const t = useT();
   const tabStripRef = useRef<HTMLElement | null>(null);
   const tabStripTrackRef = useRef<HTMLDivElement | null>(null);
   const profileMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [contextMenuState, setContextMenuState] = useState<{
+    tabId: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [profileMenuStyle, setProfileMenuStyle] = useState<CSSProperties>({});
   const [thumbMetrics, setThumbMetrics] = useState(() => ({
     offset: 0,
@@ -113,6 +148,37 @@ export function SessionTabs({
       resizeObserver.disconnect();
     };
   }, [syncThumbMetrics, tabs]);
+
+  useEffect(() => {
+    if (!contextMenuState) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".tab-context-menu")) {
+        return;
+      }
+
+      setContextMenuState(null);
+    };
+
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      setContextMenuState(null);
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [contextMenuState]);
 
   function handleWheel(event: WheelEvent<HTMLElement>) {
     const tabStrip = tabStripRef.current;
@@ -169,6 +235,32 @@ export function SessionTabs({
     onCreateSessionWithProfile(profileId);
   }
 
+  function handleOpenTabContextMenu(event: ReactMouseEvent<HTMLDivElement>, tabId: string) {
+    event.preventDefault();
+    setIsProfileMenuOpen(false);
+    setContextMenuState({
+      tabId,
+      x: event.clientX,
+      y: event.clientY
+    });
+  }
+
+  function handleCloseContextMenu() {
+    setContextMenuState(null);
+  }
+
+  const contextTab = contextMenuState
+    ? tabs.find((tab) => tab.tabId === contextMenuState.tabId)
+    : null;
+  const contextSessionId = contextTab?.sessionId ?? null;
+  const canRenameContextTab =
+    contextTab?.kind === "terminal" && contextSessionId !== null && Boolean(onRenameTab);
+  const canDetachContextTab =
+    contextTab?.kind === "terminal" &&
+    contextSessionId !== null &&
+    contextTab.status === "running" &&
+    Boolean(onDetachTab);
+
   return (
     <div className="tab-strip-shell">
       <nav
@@ -183,6 +275,7 @@ export function SessionTabs({
             <div
               key={tab.tabId}
               className={`tab ${tab.tabId === selectedTabId ? "tab-active" : ""}`}
+              onContextMenu={(event) => handleOpenTabContextMenu(event, tab.tabId)}
             >
               <button className="tab-button" onClick={() => onSelectTab(tab.tabId)} type="button">
                 <span className="tab-title">
@@ -265,6 +358,78 @@ export function SessionTabs({
           }
         />
       </div>
+      {contextMenuState && contextTab ? (
+        <div
+          className="app-menu tab-context-menu"
+          role="menu"
+          style={
+            {
+              left: `${contextMenuState.x}px`,
+              top: `${contextMenuState.y}px`
+            } as CSSProperties
+          }
+        >
+          {canRenameContextTab ? (
+            <button
+              className="app-menu-item"
+              onClick={() => {
+                onRenameTab?.(contextTab.tabId, contextSessionId);
+                handleCloseContextMenu();
+              }}
+              role="menuitem"
+              type="button"
+            >
+              <span>{t(SESSION_TAB_MESSAGES.rename)}</span>
+            </button>
+          ) : null}
+          <button
+            className="app-menu-item"
+            onClick={() => {
+              onSplitPane?.("vertical");
+              handleCloseContextMenu();
+            }}
+            role="menuitem"
+            type="button"
+          >
+            <span>{t(SESSION_TAB_MESSAGES.splitVertical)}</span>
+          </button>
+          <button
+            className="app-menu-item"
+            onClick={() => {
+              onSplitPane?.("horizontal");
+              handleCloseContextMenu();
+            }}
+            role="menuitem"
+            type="button"
+          >
+            <span>{t(SESSION_TAB_MESSAGES.splitHorizontal)}</span>
+          </button>
+          {canDetachContextTab ? (
+            <button
+              className="app-menu-item"
+              onClick={() => {
+                onDetachTab?.(contextTab.tabId, contextSessionId);
+                handleCloseContextMenu();
+              }}
+              role="menuitem"
+              type="button"
+            >
+              <span>{t(SESSION_TAB_MESSAGES.detach)}</span>
+            </button>
+          ) : null}
+          <button
+            className="app-menu-item"
+            onClick={() => {
+              onCloseTab(contextTab.tabId);
+              handleCloseContextMenu();
+            }}
+            role="menuitem"
+            type="button"
+          >
+            <span>{t(SESSION_TAB_MESSAGES.close)}</span>
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

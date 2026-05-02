@@ -18,9 +18,11 @@ describe("WorkbenchMain", () => {
         defaultProfileId="builtin:powershell"
         onActivatePane={() => undefined}
         onCloseProjectTab={() => undefined}
+        onDetachProjectTab={() => undefined}
         onCreateSession={() => undefined}
         onCreateSessionWithProfile={() => undefined}
         onProjectLayoutChange={() => undefined}
+        onRenameSession={() => undefined}
         onStreamDetached={() => undefined}
         onStreamError={() => undefined}
         onStreamMetadata={() => undefined}
@@ -52,9 +54,11 @@ describe("WorkbenchMain", () => {
         defaultProfileId="builtin:powershell"
         onActivatePane={() => undefined}
         onCloseProjectTab={() => undefined}
+        onDetachProjectTab={() => undefined}
         onCreateSession={() => undefined}
         onCreateSessionWithProfile={() => undefined}
         onProjectLayoutChange={() => undefined}
+        onRenameSession={() => undefined}
         onStreamDetached={() => undefined}
         onStreamError={() => undefined}
         onStreamMetadata={() => undefined}

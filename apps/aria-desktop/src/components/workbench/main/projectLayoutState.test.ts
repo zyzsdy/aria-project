@@ -9,6 +9,7 @@ import {
   selectProject,
   selectProjectTab,
   splitActivePane,
+  splitPane,
   updateProjectLayout
 } from "./projectLayoutState";
 
@@ -92,6 +93,72 @@ describe("project layout state", () => {
       return;
     }
     expect(project.layout.second.paneId).toMatch(UUID_PATTERN);
+  });
+
+  it("splits the requested pane even when another pane is active", () => {
+    const workspace = createWorkspaceWithSplit({
+      activeProjectId: "project-a",
+      activePaneId: "pane-a",
+      firstTabs: [terminalTab("tab-a", "session-a")],
+      firstActiveTabId: "tab-a",
+      secondTabs: [terminalTab("tab-b", "session-b")],
+      secondActiveTabId: "tab-b"
+    });
+
+    const next = splitPane(workspace, "pane-b", "vertical");
+    const project = next.projects[0];
+
+    expect(project.activePaneId).not.toBe("pane-a");
+    expect(project.layout.type).toBe("split");
+    if (project.layout.type !== "split" || project.layout.second.type !== "split") {
+      throw new Error("expected pane-b to be replaced with a nested split");
+    }
+
+    expect(project.layout.first).toEqual({
+      type: "leaf",
+      paneId: "pane-a",
+      activeTabId: "tab-a",
+      tabs: [terminalTab("tab-a", "session-a")]
+    });
+    expect(project.layout.second.direction).toBe("vertical");
+    expect(project.layout.second.first).toEqual({
+      type: "leaf",
+      paneId: "pane-b",
+      activeTabId: "tab-b",
+      tabs: [terminalTab("tab-b", "session-b")]
+    });
+    expect(project.layout.second.second.type).toBe("leaf");
+    if (project.layout.second.second.type === "leaf") {
+      expect(project.activePaneId).toBe(project.layout.second.second.paneId);
+      expect(project.layout.second.second.tabs).toEqual([]);
+    }
+  });
+
+  it("keeps splitActivePane focused on the active pane", () => {
+    const workspace = createWorkspaceWithSplit({
+      activeProjectId: "project-a",
+      activePaneId: "pane-a",
+      firstTabs: [terminalTab("tab-a", "session-a")],
+      firstActiveTabId: "tab-a",
+      secondTabs: [terminalTab("tab-b", "session-b")],
+      secondActiveTabId: "tab-b"
+    });
+
+    const next = splitActivePane(workspace, "horizontal");
+    const project = next.projects[0];
+
+    expect(project.layout.type).toBe("split");
+    if (project.layout.type !== "split" || project.layout.first.type !== "split") {
+      throw new Error("expected active pane-a to be replaced with a nested split");
+    }
+
+    expect(project.layout.first.direction).toBe("horizontal");
+    expect(project.layout.second).toEqual({
+      type: "leaf",
+      paneId: "pane-b",
+      activeTabId: "tab-b",
+      tabs: [terminalTab("tab-b", "session-b")]
+    });
   });
 
   it("activates an existing html tab anywhere in the active project", () => {

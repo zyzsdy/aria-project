@@ -47,8 +47,13 @@ title = "集合"
 
 [workbench.tabs]
 aria_label = "会话标签页"
-settings_tab = "设置"
+close = "关闭"
 close_tab = "关闭 {title}"
+detach = "脱离"
+rename = "重命名"
+settings_tab = "设置"
+split_horizontal = "水平拆分窗格"
+split_vertical = "垂直拆分窗格"
 
 [workbench.status]
 check_updates_unavailable = "检查更新功能暂未接通。"

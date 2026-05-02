@@ -29,9 +29,11 @@ type WorkbenchMainProps = {
   shouldCloseSessionIfUnusedOnDispose: (tabId: string) => boolean;
   onActivatePane: (paneId: string) => void;
   onCloseProjectTab: (paneId: string, tabId: string) => void;
+  onDetachProjectTab: (paneId: string, tabId: string, sessionId: string) => void;
   onProjectLayoutChange: (layout: ProjectPaneNode, activePaneId: string) => void;
+  onRenameSession: (sessionId: string) => void;
   onSelectProjectTab: (paneId: string, tabId: string) => void;
-  onSplitPane: (direction: PaneSplitDirection) => void;
+  onSplitPane: (paneId: string, direction: PaneSplitDirection) => void;
   onSelectSettingsGroup: (group: SettingsGroup) => void;
   onUpdateSettings: (next: Partial<AppSettings>) => void;
   onResetSettingsGroup: (group: SettingsGroup) => void;
@@ -54,7 +56,9 @@ export function WorkbenchMain({
   shouldCloseSessionIfUnusedOnDispose,
   onActivatePane,
   onCloseProjectTab,
+  onDetachProjectTab,
   onProjectLayoutChange,
+  onRenameSession,
   onSelectProjectTab,
   onSplitPane,
   onSelectSettingsGroup,
@@ -76,7 +80,9 @@ export function WorkbenchMain({
             onCreateSessionWithProfile={onCreateSessionWithProfile}
             onActivatePane={onActivatePane}
             onCloseTab={onCloseProjectTab}
+            onDetachTab={onDetachProjectTab}
             onLayoutChange={onProjectLayoutChange}
+            onRenameSession={onRenameSession}
             onResetSettingsGroup={onResetSettingsGroup}
             onSelectTab={onSelectProjectTab}
             onSelectSettingsGroup={onSelectSettingsGroup}

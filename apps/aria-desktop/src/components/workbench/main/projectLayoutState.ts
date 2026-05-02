@@ -203,8 +203,21 @@ export function splitActivePane(
     return workspace;
   }
 
-  const activePane = findActivePane(project.layout, project.activePaneId);
-  if (!activePane) {
+  return splitPane(workspace, project.activePaneId, direction);
+}
+
+export function splitPane(
+  workspace: ProjectWorkspace,
+  paneId: string,
+  direction: PaneSplitDirection
+): ProjectWorkspace {
+  const project = getActiveProject(workspace);
+  if (!project) {
+    return workspace;
+  }
+
+  const pane = findActivePane(project.layout, paneId);
+  if (!pane) {
     return workspace;
   }
 
@@ -219,14 +232,14 @@ export function splitActivePane(
     splitId: createId(),
     direction,
     ratio: 0.5,
-    first: activePane,
+    first: pane,
     second: nextPane
   };
 
   return updateProject(workspace, project.projectId, {
     ...project,
     activePaneId: nextPane.paneId,
-    layout: replacePane(project.layout, activePane.paneId, split)
+    layout: replacePane(project.layout, pane.paneId, split)
   });
 }
 

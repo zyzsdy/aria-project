@@ -47,8 +47,13 @@ title = "コレクション"
 
 [workbench.tabs]
 aria_label = "セッションタブ"
-settings_tab = "設定"
+close = "閉じる"
 close_tab = "{title} を閉じる"
+detach = "デタッチ"
+rename = "名前を変更"
+settings_tab = "設定"
+split_horizontal = "左右に分割"
+split_vertical = "上下に分割"
 
 [workbench.status]
 check_updates_unavailable = "アップデート確認機能はまだ接続されていません。"

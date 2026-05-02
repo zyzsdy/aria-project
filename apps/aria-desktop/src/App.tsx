@@ -28,7 +28,7 @@ import {
   openHtmlTabInActiveProject,
   selectProject,
   selectProjectTab,
-  splitActivePane
+  splitPane
 } from "./components/workbench/main/projectLayoutState";
 import { RenameSessionDialog } from "./components/workbench/sidebar/RenameSessionDialog";
 import { ProjectNameDialog } from "./components/workbench/sidebar/ProjectNameDialog";
@@ -325,8 +325,13 @@ export function App() {
   async function handleCloseProjectTab(paneId: string, tabId: string) {
     const activeProject = getActiveProject(projectWorkspaceRef.current);
     const closingTab = activeProject ? findProjectTab(activeProject.layout, paneId, tabId) : null;
+    const closingSession = closingTab?.sessionId
+      ? sessions.find((session) => session.sessionId === closingTab.sessionId)
+      : null;
     const closeSessionIfUnused =
-      closingTab?.kind === "terminal" ? closingTab.sessionId ?? null : null;
+      closingTab?.kind === "terminal" && closingSession?.status !== "background"
+        ? closingTab.sessionId ?? null
+        : null;
     if (closeSessionIfUnused) {
       closingTerminalTabIdsRef.current.add(tabId);
     }
@@ -337,8 +342,21 @@ export function App() {
     );
   }
 
-  async function handleSplitPane(direction: PaneSplitDirection) {
-    await applyProjectWorkspace(splitActivePane(projectWorkspaceRef.current, direction));
+  async function handleDetachProjectTab(paneId: string, tabId: string, sessionId: string) {
+    const success = await handleSetSessionBackground(sessionId, true);
+    if (!success) {
+      return;
+    }
+
+    await applyProjectWorkspace(
+      closeProjectTab(projectWorkspaceRef.current, paneId, tabId),
+      true,
+      null
+    );
+  }
+
+  async function handleSplitPane(paneId: string, direction: PaneSplitDirection) {
+    await applyProjectWorkspace(splitPane(projectWorkspaceRef.current, paneId, direction));
   }
 
   async function handleProjectLayoutChange(layout: ProjectPaneNode, activePaneId: string) {
@@ -376,9 +394,11 @@ export function App() {
     });
     try {
       await invoke("set_session_background", { sessionId, background });
+      return true;
     } catch (error) {
       logDesktopError(error);
       await refreshWorkbench({ startupBehavior: "open_empty" });
+      return false;
     }
   }
 
@@ -462,6 +482,9 @@ export function App() {
         onCloseToolNotice={() => setToolNotice(null)}
         onActivatePane={(paneId) => void handleActivatePane(paneId)}
         onCloseProjectTab={(paneId, tabId) => void handleCloseProjectTab(paneId, tabId)}
+        onDetachProjectTab={(paneId, tabId, sessionId) =>
+          void handleDetachProjectTab(paneId, tabId, sessionId)
+        }
         onCloseSession={handleCloseSession}
         onCloseRenameDialog={() => setRenamingSessionId(null)}
         onCloseProjectNameDialog={() => setProjectNameDialog(null)}
@@ -489,7 +512,7 @@ export function App() {
         onSelectProjectTab={(paneId, tabId) => void handleSelectProjectTab(paneId, tabId)}
         onSelectSession={handleSelectSession}
         onSelectSettingsGroup={setSelectedSettingsGroup}
-        onSplitPane={(direction) => void handleSplitPane(direction)}
+        onSplitPane={(paneId, direction) => void handleSplitPane(paneId, direction)}
         onStreamDetached={handleStreamDetached}
         onStreamError={logDesktopError}
         onStreamMetadata={handleStreamMetadata}
@@ -560,6 +583,7 @@ type AppShellProps = {
   onCloseToolNotice: () => void;
   onActivatePane: (paneId: string) => void;
   onCloseProjectTab: (paneId: string, tabId: string) => void;
+  onDetachProjectTab: (paneId: string, tabId: string, sessionId: string) => void;
   onCloseSession: (sessionId: string) => void;
   onCloseRenameDialog: () => void;
   onConfirmProjectName: (name: string) => void;
@@ -582,7 +606,7 @@ type AppShellProps = {
   onSelectProjectTab: (paneId: string, tabId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onSelectSettingsGroup: (group: SettingsGroup) => void;
-  onSplitPane: (direction: PaneSplitDirection) => void;
+  onSplitPane: (paneId: string, direction: PaneSplitDirection) => void;
   onStreamDetached: (sessionId: string) => void;
   onStreamError: (error: unknown) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
@@ -616,6 +640,7 @@ function AppShell({
   onCloseToolNotice,
   onActivatePane,
   onCloseProjectTab,
+  onDetachProjectTab,
   onCloseSession,
   onCloseRenameDialog,
   onConfirmProjectName,
@@ -728,7 +753,9 @@ function AppShell({
           onCreateSessionWithProfile={onCreateSessionWithProfile}
           onActivatePane={onActivatePane}
           onCloseProjectTab={onCloseProjectTab}
+          onDetachProjectTab={onDetachProjectTab}
           onProjectLayoutChange={onProjectLayoutChange}
+          onRenameSession={onRenameSession}
           onResetSettingsGroup={onResetSettingsGroup}
           onSelectProjectTab={onSelectProjectTab}
           onSelectSettingsGroup={onSelectSettingsGroup}

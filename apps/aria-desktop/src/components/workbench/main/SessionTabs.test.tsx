@@ -172,6 +172,145 @@ describe("SessionTabs structure", () => {
     expect(onCreateSessionWithProfile).toHaveBeenCalledWith("custom:git-bash");
   });
 
+  it("opens a tab context menu and dispatches session tab commands", async () => {
+    const onCloseTab = vi.fn();
+    const onDetachTab = vi.fn();
+    const onRenameTab = vi.fn();
+    const onSplitPane = vi.fn();
+    root = createRoot(container!);
+
+    act(() => {
+      root!.render(
+        <SessionTabs
+          busy={false}
+          defaultProfileId="builtin:powershell"
+          onCloseTab={onCloseTab}
+          onCreateSession={() => undefined}
+          onCreateSessionWithProfile={() => undefined}
+          onDetachTab={onDetachTab}
+          onRenameTab={onRenameTab}
+          onSelectTab={() => undefined}
+          onSplitPane={onSplitPane}
+          profiles={[]}
+          selectedTabId="terminal:session-1"
+          tabs={[
+            {
+              kind: "terminal",
+              sessionId: "session-1",
+              status: "running",
+              tabId: "terminal:session-1",
+              title: "PowerShell"
+            }
+          ]}
+        />
+      );
+    });
+
+    const tab = container?.querySelector(".tab");
+    act(() => {
+      tab?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 12, clientY: 34 }));
+    });
+
+    expect(container?.querySelector(".tab-context-menu")).not.toBeNull();
+    expect(container?.textContent).toContain("Rename");
+    expect(container?.textContent).toContain("Split vertically");
+    expect(container?.textContent).toContain("Split horizontally");
+    expect(container?.textContent).toContain("Detach");
+    expect(container?.textContent).toContain("Close");
+
+    act(() => {
+      findButton("Rename").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onRenameTab).toHaveBeenCalledWith("terminal:session-1", "session-1");
+
+    act(() => {
+      tab?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    act(() => {
+      findButton("Split vertically").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onSplitPane).toHaveBeenCalledWith("vertical");
+
+    act(() => {
+      tab?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    act(() => {
+      findButton("Split horizontally").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onSplitPane).toHaveBeenCalledWith("horizontal");
+
+    act(() => {
+      tab?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    act(() => {
+      findButton("Detach").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onDetachTab).toHaveBeenCalledWith("terminal:session-1", "session-1");
+
+    act(() => {
+      tab?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    act(() => {
+      findButton("Close").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onCloseTab).toHaveBeenCalledWith("terminal:session-1");
+  });
+
+  it("hides detach and rename for non-running or non-session tabs", async () => {
+    root = createRoot(container!);
+
+    act(() => {
+      root!.render(
+        <SessionTabs
+          busy={false}
+          defaultProfileId="builtin:powershell"
+          onCloseTab={() => undefined}
+          onCreateSession={() => undefined}
+          onCreateSessionWithProfile={() => undefined}
+          onRenameTab={() => undefined}
+          onSelectTab={() => undefined}
+          profiles={[]}
+          selectedTabId="settings-tab"
+          tabs={[
+            {
+              kind: "html",
+              sessionId: null,
+              status: null,
+              tabId: "settings-tab",
+              title: "Settings"
+            },
+            {
+              kind: "terminal",
+              sessionId: "session-background",
+              status: "background",
+              tabId: "terminal:background",
+              title: "Background"
+            }
+          ]}
+        />
+      );
+    });
+
+    const tabs = container?.querySelectorAll(".tab");
+    act(() => {
+      tabs?.[0]?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+
+    expect(container?.textContent).not.toContain("Rename");
+    expect(container?.textContent).not.toContain("Detach");
+    expect(container?.textContent).toContain("Close");
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    act(() => {
+      tabs?.[1]?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+
+    expect(container?.textContent).toContain("Rename");
+    expect(container?.textContent).not.toContain("Detach");
+  });
+
   function findButton(label: string) {
     const button = [...(container?.querySelectorAll("button") ?? [])].find((candidate) => {
       const ariaLabel = candidate.getAttribute("aria-label");

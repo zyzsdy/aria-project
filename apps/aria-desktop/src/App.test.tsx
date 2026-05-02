@@ -422,7 +422,7 @@ describe("App", () => {
               layout: ProjectWorkspace["projects"][number]["layout"];
               projectId: string;
             };
-            expect(request.closeSessionIfUnused).toBe("session-a");
+            expect(request.closeSessionIfUnused).toBeNull();
             workspace = {
               ...workspace,
               projects: workspace.projects.map((project) =>
@@ -456,7 +456,7 @@ describe("App", () => {
       "update_project_layout",
       expect.objectContaining({
         request: expect.objectContaining({
-          closeSessionIfUnused: "session-a"
+          closeSessionIfUnused: null
         })
       })
     );
@@ -464,6 +464,102 @@ describe("App", () => {
     expect(container?.textContent).not.toContain("Alpha");
     await openSessionsSidebar();
     expect(container?.textContent).toContain("Alpha");
+  });
+
+  it("detaches a running tab by marking it background before closing the tab", async () => {
+    const baseSettings = createPlatformDefaultSettings("windows");
+    const settings = {
+      ...baseSettings,
+      workspace: {
+        ...baseSettings.workspace,
+        startupBehavior: "open_empty" as const
+      }
+    };
+    const session = createSessionSummary("session-a", "Alpha");
+    let sessions: SessionSummary[] = [session];
+    let workspace = createProjectWorkspace({
+      layout: {
+        type: "leaf",
+        paneId: "pane-a",
+        activeTabId: "tab-a",
+        tabs: [
+          {
+            kind: "terminal",
+            pageId: null,
+            sessionId: "session-a",
+            tabId: "tab-a",
+            title: "Alpha"
+          }
+        ]
+      }
+    });
+
+    invokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
+      switch (command) {
+        case "get_app_settings":
+          return settings;
+        case "list_sessions":
+          return sessions;
+        case "get_project_workspace":
+          return workspace;
+        case "set_session_background":
+          expect(payload).toEqual({ sessionId: "session-a", background: true });
+          sessions = [{ ...session, status: "background" }];
+          return undefined;
+        case "update_project_layout":
+          {
+            const request = payload?.request as {
+              activePaneId: string;
+              closeSessionIfUnused?: string | null;
+              layout: ProjectWorkspace["projects"][number]["layout"];
+              projectId: string;
+            };
+            expect(request.closeSessionIfUnused).toBeNull();
+            workspace = {
+              ...workspace,
+              projects: workspace.projects.map((project) =>
+                project.projectId === request.projectId
+                  ? {
+                      ...project,
+                      activePaneId: request.activePaneId,
+                      layout: request.layout
+                    }
+                  : project
+              )
+            };
+            return workspace;
+          }
+        default:
+          throw new Error(`Unexpected invoke command: ${command}`);
+      }
+    });
+
+    renderApp();
+    await flushAsyncWork();
+
+    act(() => {
+      container
+        ?.querySelector(".tab")
+        ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    });
+    await flushAsyncWork();
+
+    const detachButton = await waitForButton("Detach");
+    act(() => {
+      detachButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForInvoke("update_project_layout");
+
+    const commandNames = invokeMock.mock.calls.map(([command]) => command);
+    const setBackgroundCallIndex = commandNames.lastIndexOf("set_session_background");
+    const updateLayoutCallIndex = commandNames.lastIndexOf("update_project_layout");
+    expect(setBackgroundCallIndex).toBeGreaterThan(-1);
+    expect(updateLayoutCallIndex).toBeGreaterThan(setBackgroundCallIndex);
+    expect(invokeMock).toHaveBeenCalledWith("update_project_layout", {
+      request: expect.objectContaining({
+        closeSessionIfUnused: null
+      })
+    });
   });
 
   it("uses app dialogs instead of window prompts for creating and renaming projects", async () => {

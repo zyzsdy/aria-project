@@ -50,5 +50,10 @@ check_updates_unavailable = "Check for Updates is not wired up yet."
 
 [workbench.tabs]
 aria_label = "Session tabs"
+close = "Close"
 close_tab = "Close {title}"
+detach = "Detach"
+rename = "Rename"
 settings_tab = "Settings"
+split_horizontal = "Split horizontally"
+split_vertical = "Split vertically"

@@ -52,9 +52,11 @@ type ProjectWorkspaceViewProps = {
   onCloseTab: (paneId: string, tabId: string) => void;
   onLayoutChange: (layout: ProjectPaneNode, activePaneId: string) => void;
   onResetSettingsGroup: (group: SettingsGroup) => void;
+  onDetachTab: (paneId: string, tabId: string, sessionId: string) => void;
+  onRenameSession: (sessionId: string) => void;
   onSelectTab: (paneId: string, tabId: string) => void;
   onSelectSettingsGroup: (group: SettingsGroup) => void;
-  onSplitPane: (direction: PaneSplitDirection) => void;
+  onSplitPane: (paneId: string, direction: PaneSplitDirection) => void;
   onStreamDetached: (sessionId: string) => void;
   onStreamError: (error: unknown) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
@@ -78,6 +80,8 @@ export function ProjectWorkspaceView({
   onCloseTab,
   onLayoutChange,
   onResetSettingsGroup,
+  onDetachTab,
+  onRenameSession,
   onSelectTab,
   onSelectSettingsGroup,
   onSplitPane,
@@ -106,6 +110,8 @@ export function ProjectWorkspaceView({
         onCloseTab={onCloseTab}
         onLayoutChange={onLayoutChange}
         onResetSettingsGroup={onResetSettingsGroup}
+        onDetachTab={onDetachTab}
+        onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
         onSelectSettingsGroup={onSelectSettingsGroup}
         onSplitPane={onSplitPane}
@@ -140,6 +146,8 @@ function PaneNodeView({
   onCloseTab,
   onLayoutChange,
   onResetSettingsGroup,
+  onDetachTab,
+  onRenameSession,
   onSelectTab,
   onSelectSettingsGroup,
   onSplitPane,
@@ -166,6 +174,8 @@ function PaneNodeView({
         onActivatePane={onActivatePane}
         onCloseTab={onCloseTab}
         onResetSettingsGroup={onResetSettingsGroup}
+        onDetachTab={onDetachTab}
+        onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
         onSelectSettingsGroup={onSelectSettingsGroup}
         onSplitPane={onSplitPane}
@@ -236,6 +246,8 @@ function PaneNodeView({
         onCloseTab={onCloseTab}
         onLayoutChange={onLayoutChange}
         onResetSettingsGroup={onResetSettingsGroup}
+        onDetachTab={onDetachTab}
+        onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
         onSelectSettingsGroup={onSelectSettingsGroup}
         onSplitPane={onSplitPane}
@@ -268,6 +280,8 @@ function PaneNodeView({
         onCloseTab={onCloseTab}
         onLayoutChange={onLayoutChange}
         onResetSettingsGroup={onResetSettingsGroup}
+        onDetachTab={onDetachTab}
+        onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
         onSelectSettingsGroup={onSelectSettingsGroup}
         onSplitPane={onSplitPane}
@@ -296,9 +310,11 @@ type ProjectPaneViewProps = {
   onActivatePane: (paneId: string) => void;
   onCloseTab: (paneId: string, tabId: string) => void;
   onResetSettingsGroup: (group: SettingsGroup) => void;
+  onDetachTab: (paneId: string, tabId: string, sessionId: string) => void;
+  onRenameSession: (sessionId: string) => void;
   onSelectTab: (paneId: string, tabId: string) => void;
   onSelectSettingsGroup: (group: SettingsGroup) => void;
-  onSplitPane: (direction: PaneSplitDirection) => void;
+  onSplitPane: (paneId: string, direction: PaneSplitDirection) => void;
   onStreamDetached: (sessionId: string) => void;
   onStreamError: (error: unknown) => void;
   onStreamMetadata: (sessionId: string, metadata: SessionStreamMetadata) => void;
@@ -321,6 +337,8 @@ function ProjectPaneView({
   onActivatePane,
   onCloseTab,
   onResetSettingsGroup,
+  onDetachTab,
+  onRenameSession,
   onSelectTab,
   onSelectSettingsGroup,
   onSplitPane,
@@ -350,13 +368,19 @@ function ProjectPaneView({
           onCloseTab={(tabId) => onCloseTab(pane.paneId, tabId)}
           onCreateSession={onCreateSession}
           onCreateSessionWithProfile={onCreateSessionWithProfile}
+          onDetachTab={(tabId, sessionId) => onDetachTab(pane.paneId, tabId, sessionId)}
+          onRenameTab={(_tabId, sessionId) => onRenameSession(sessionId)}
           onSelectTab={(tabId) => onSelectTab(pane.paneId, tabId)}
+          onSplitPane={(direction) => onSplitPane(pane.paneId, direction)}
           profiles={profiles}
           selectedTabId={activeTab?.tabId ?? null}
           tabs={pane.tabs.map((tab) => ({
             isBackground:
               sessions.find((session) => session.sessionId === tab.sessionId)?.status ===
               "background",
+            kind: tab.kind,
+            sessionId: tab.sessionId,
+            status: sessions.find((session) => session.sessionId === tab.sessionId)?.status ?? null,
             tabId: tab.tabId,
             title:
               sessions.find((session) => session.sessionId === tab.sessionId)?.title ??
@@ -368,7 +392,7 @@ function ProjectPaneView({
           <button
             aria-label={t(PROJECT_WORKSPACE_MESSAGES.splitHorizontal)}
             className="sidebar-icon-button"
-            onClick={() => onSplitPane("horizontal")}
+            onClick={() => onSplitPane(pane.paneId, "horizontal")}
             type="button"
           >
             <Columns2 aria-hidden="true" size={14} strokeWidth={2} />
@@ -376,7 +400,7 @@ function ProjectPaneView({
           <button
             aria-label={t(PROJECT_WORKSPACE_MESSAGES.splitVertical)}
             className="sidebar-icon-button"
-            onClick={() => onSplitPane("vertical")}
+            onClick={() => onSplitPane(pane.paneId, "vertical")}
             type="button"
           >
             <Rows2 aria-hidden="true" size={14} strokeWidth={2} />
