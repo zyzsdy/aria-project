@@ -12,8 +12,8 @@ use aria_ipc::{
     DetachViewerRequest, EmptyResponse, GetProjectWorkspaceRequest, GetSettingsRequest,
     HealthRequest, HealthResponse, ListSessionsRequest, ProjectSelector, ReadScrollbackRequest,
     RenameProjectRequest, RenameSessionRequest, ResetSettingsGroupRequest, RpcRequest, RpcResponse,
-    SessionResizeRequest, SessionSelector, SessionWriteRequest, UpdateProjectLayoutRequest,
-    UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
+    SessionResizeRequest, SessionSelector, SessionWriteRequest, SetSessionBackgroundRequest,
+    UpdateProjectLayoutRequest, UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, HealthStatus, SessionId};
 use aria_session::SessionManager;
@@ -261,6 +261,13 @@ async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcRe
         },
         "sessions.rename" => match decode::<RenameSessionRequest>(request.payload) {
             Ok(payload) => match state.manager.rename(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(error),
+            },
+            Err(error) => err(error),
+        },
+        "sessions.setBackground" => match decode::<SetSessionBackgroundRequest>(request.payload) {
+            Ok(payload) => match state.manager.set_background(payload).await {
                 Ok(response) => ok(response),
                 Err(error) => err(error),
             },

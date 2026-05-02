@@ -354,6 +354,9 @@ function ProjectPaneView({
           profiles={profiles}
           selectedTabId={activeTab?.tabId ?? null}
           tabs={pane.tabs.map((tab) => ({
+            isBackground:
+              sessions.find((session) => session.sessionId === tab.sessionId)?.status ===
+              "background",
             tabId: tab.tabId,
             title:
               sessions.find((session) => session.sessionId === tab.sessionId)?.title ??

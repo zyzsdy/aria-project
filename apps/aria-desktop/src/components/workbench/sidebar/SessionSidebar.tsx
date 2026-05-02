@@ -1,4 +1,4 @@
-import type { SessionSummary } from "@aria/types";
+import type { SessionStatus, SessionSummary } from "@aria/types";
 import { useEffect, useState, type CSSProperties } from "react";
 import { defineMessages } from "../../../i18n/messages";
 import { useT } from "../../../i18n/react";
@@ -12,6 +12,14 @@ const SESSION_SIDEBAR_MESSAGES = defineMessages({
     key: "workbench.sidebar.sessions.rename",
     defaultMessage: "Rename"
   },
+  setBackground: {
+    key: "workbench.sidebar.sessions.set_background",
+    defaultMessage: "Run in background"
+  },
+  setForeground: {
+    key: "workbench.sidebar.sessions.set_foreground",
+    defaultMessage: "Bring to foreground"
+  },
   terminate: {
     key: "workbench.sidebar.sessions.terminate",
     defaultMessage: "Terminate"
@@ -23,6 +31,7 @@ type SessionSidebarProps = {
   sessions: SessionSummary[];
   onSelectSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string) => void;
+  onSetSessionBackground: (sessionId: string, background: boolean) => void;
   onCloseSession: (sessionId: string) => void;
 };
 
@@ -31,6 +40,7 @@ export function SessionSidebar({
   sessions,
   onSelectSession,
   onRenameSession,
+  onSetSessionBackground,
   onCloseSession
 }: SessionSidebarProps) {
   const t = useT();
@@ -74,6 +84,14 @@ export function SessionSidebar({
   if (sessions.length === 0) {
     return <p className="sidebar-empty-copy">{t(SESSION_SIDEBAR_MESSAGES.empty)}</p>;
   }
+
+  const contextSession = contextMenuState
+    ? sessions.find((session) => session.sessionId === contextMenuState.sessionId)
+    : null;
+  const canToggleBackground = contextSession
+    ? isBackgroundToggleable(contextSession.status)
+    : false;
+  const nextBackground = contextSession?.status !== "background";
 
   return (
     <div className="session-list">
@@ -120,6 +138,27 @@ export function SessionSidebar({
           </button>
           <button
             className="app-menu-item"
+            disabled={!canToggleBackground}
+            onClick={() => {
+              if (!canToggleBackground) {
+                return;
+              }
+              onSetSessionBackground(contextMenuState.sessionId, nextBackground);
+              setContextMenuState(null);
+            }}
+            role="menuitem"
+            type="button"
+          >
+            <span>
+              {t(
+                nextBackground
+                  ? SESSION_SIDEBAR_MESSAGES.setBackground
+                  : SESSION_SIDEBAR_MESSAGES.setForeground
+              )}
+            </span>
+          </button>
+          <button
+            className="app-menu-item"
             onClick={() => {
               onCloseSession(contextMenuState.sessionId);
               setContextMenuState(null);
@@ -133,4 +172,8 @@ export function SessionSidebar({
       ) : null}
     </div>
   );
+}
+
+function isBackgroundToggleable(status: SessionStatus) {
+  return status === "running" || status === "background";
 }

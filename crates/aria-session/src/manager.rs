@@ -11,7 +11,7 @@ use aria_ipc::{
     RenameSessionRequest, ReplayMode, ScrollbackLine, ScrollbackStats, SessionMetadata,
     SessionMetadataDelta, SessionResizeRequest, SessionSelector, SessionSnapshot,
     SessionStreamFrame, SessionStreamMetadata, SessionSummary, SessionWriteRequest,
-    ViewerAckRequest, ViewerDetachedReason, ViewerRole,
+    SetSessionBackgroundRequest, ViewerAckRequest, ViewerDetachedReason, ViewerRole,
 };
 use aria_model::{SessionId, SessionStatus, TerminalSize, ViewerId};
 use aria_terminal::{TerminalEngine, Vt100TerminalEngine};
@@ -61,6 +61,7 @@ enum SessionCommand {
     Shutdown(oneshot::Sender<Result<()>>),
     ShutdownIfNoViewers(oneshot::Sender<Result<bool>>),
     Rename(String, oneshot::Sender<Result<()>>),
+    SetBackground(bool, oneshot::Sender<Result<()>>),
     ProcessOutput(Vec<u8>),
     ProcessExit(Option<u32>),
 }
@@ -425,6 +426,23 @@ impl SessionManager {
         Ok(EmptyResponse {})
     }
 
+    pub async fn set_background(
+        &self,
+        request: SetSessionBackgroundRequest,
+    ) -> Result<EmptyResponse> {
+        let handle = self.handle(request.session_id).await?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        handle
+            .sender
+            .send(SessionCommand::SetBackground(request.background, reply_tx))
+            .await
+            .map_err(|_| anyhow!("session actor is unavailable"))?;
+        reply_rx
+            .await
+            .map_err(|_| anyhow!("session actor dropped"))??;
+        Ok(EmptyResponse {})
+    }
+
     async fn get_summary(&self, session_id: SessionId) -> Result<SessionSummary> {
         let handle = self.handle(session_id).await?;
         request_summary(&handle).await
@@ -554,6 +572,9 @@ async fn run_session_actor(mut actor: SessionActor, mut receiver: mpsc::Receiver
             }
             SessionCommand::Rename(title, reply) => {
                 let _ = reply.send(actor.rename(title));
+            }
+            SessionCommand::SetBackground(background, reply) => {
+                let _ = reply.send(actor.set_background(background));
             }
             SessionCommand::ProcessOutput(bytes) => {
                 let normalized = normalize_terminal_output(&bytes);
@@ -711,6 +732,9 @@ impl SessionActor {
         if !self.viewers.is_empty() {
             return Ok(false);
         }
+        if self.metadata.status == SessionStatus::Background {
+            return Ok(false);
+        }
         self.shutdown().await?;
         Ok(true)
     }
@@ -807,6 +831,38 @@ impl SessionActor {
         self.emit_metadata(SessionMetadataDelta {
             title: Some(title),
             status: None,
+            cwd: None,
+            shell: None,
+            process_id: None,
+            exit_code: None,
+        });
+        Ok(())
+    }
+
+    fn set_background(&mut self, background: bool) -> Result<()> {
+        let next_status = if background {
+            SessionStatus::Background
+        } else {
+            SessionStatus::Running
+        };
+        if self.metadata.status == next_status {
+            return Ok(());
+        }
+        if !matches!(
+            self.metadata.status,
+            SessionStatus::Running | SessionStatus::Background
+        ) {
+            return Err(anyhow!(
+                "cannot change background mode for {:?} session",
+                self.metadata.status
+            ));
+        }
+
+        self.metadata.status = next_status;
+        self.metadata.updated_at = unix_timestamp();
+        self.emit_metadata(SessionMetadataDelta {
+            title: None,
+            status: Some(next_status),
             cwd: None,
             shell: None,
             process_id: None,
@@ -1772,6 +1828,124 @@ mod tests {
         assert!(
             manager.sessions.read().await.contains_key(&session_id),
             "sessions with attached viewers must stay registered"
+        );
+    }
+
+    #[tokio::test]
+    async fn close_if_no_viewers_preserves_background_session() {
+        let manager = SessionManager::new();
+        let session_id = insert_failing_shutdown_session(&manager, TerminalSize::new(80, 24)).await;
+
+        manager
+            .set_background(aria_ipc::SetSessionBackgroundRequest {
+                session_id,
+                background: true,
+            })
+            .await
+            .expect("mark background");
+
+        let closed = manager
+            .close_if_no_viewers(session_id)
+            .await
+            .expect("conditional close should succeed");
+
+        assert!(!closed);
+        assert!(
+            manager.sessions.read().await.contains_key(&session_id),
+            "background sessions must stay registered without attached viewers"
+        );
+        assert_eq!(
+            manager
+                .metadata(aria_ipc::SessionSelector { session_id })
+                .await
+                .expect("metadata")
+                .status,
+            SessionStatus::Background
+        );
+    }
+
+    #[tokio::test]
+    async fn foreground_background_session_can_be_cleaned_up_when_unviewed() {
+        let manager = SessionManager::new();
+        let session_id = insert_failing_shutdown_session(&manager, TerminalSize::new(80, 24)).await;
+
+        manager
+            .set_background(aria_ipc::SetSessionBackgroundRequest {
+                session_id,
+                background: true,
+            })
+            .await
+            .expect("mark background");
+        manager
+            .set_background(aria_ipc::SetSessionBackgroundRequest {
+                session_id,
+                background: false,
+            })
+            .await
+            .expect("mark foreground");
+
+        let closed = manager
+            .close_if_no_viewers(session_id)
+            .await
+            .expect("conditional close should succeed");
+
+        assert!(closed);
+        assert!(
+            !manager.sessions.read().await.contains_key(&session_id),
+            "foreground unviewed sessions should be removable again"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_background_emits_metadata_delta_to_attached_viewers() {
+        let manager = SessionManager::new();
+        let session_id = insert_failing_shutdown_session(&manager, TerminalSize::new(80, 24)).await;
+        let handle = manager.handle(session_id).await.expect("session handle");
+        let (_attach, mut frames) = attach_test_viewer(&handle.sender, session_id, None).await;
+        let _ = frames.recv().await.expect("initial rehydrate");
+
+        manager
+            .set_background(aria_ipc::SetSessionBackgroundRequest {
+                session_id,
+                background: true,
+            })
+            .await
+            .expect("mark background");
+
+        match frames.recv().await.expect("metadata frame") {
+            SessionStreamFrame::SessionMetadata { metadata, .. } => {
+                assert_eq!(metadata.status, Some(SessionStatus::Background));
+            }
+            other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn background_session_process_exit_reports_exited() {
+        let manager = SessionManager::new();
+        let session_id = insert_failing_shutdown_session(&manager, TerminalSize::new(80, 24)).await;
+        manager
+            .set_background(aria_ipc::SetSessionBackgroundRequest {
+                session_id,
+                background: true,
+            })
+            .await
+            .expect("mark background");
+
+        let handle = manager.handle(session_id).await.expect("session handle");
+        handle
+            .sender
+            .send(SessionCommand::ProcessExit(Some(0)))
+            .await
+            .expect("send process exit");
+
+        assert_eq!(
+            manager
+                .metadata(aria_ipc::SessionSelector { session_id })
+                .await
+                .expect("metadata")
+                .status,
+            SessionStatus::Exited
         );
     }
 

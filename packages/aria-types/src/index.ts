@@ -8,6 +8,7 @@ export const HEALTH_STATUSES = [
 export const SESSION_STATUSES = [
   "starting",
   "running",
+  "background",
   "exited",
   "closed",
   "failed"

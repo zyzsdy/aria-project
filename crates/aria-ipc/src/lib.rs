@@ -252,6 +252,13 @@ pub struct RenameSessionRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SetSessionBackgroundRequest {
+    pub session_id: SessionId,
+    pub background: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EmptyResponse {}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -909,6 +916,11 @@ pub trait SessionService: Send + Sync {
         request: RenameSessionRequest,
     ) -> Result<EmptyResponse, ContractError>;
 
+    async fn set_session_background(
+        &self,
+        request: SetSessionBackgroundRequest,
+    ) -> Result<EmptyResponse, ContractError>;
+
     async fn detach_viewer(
         &self,
         request: DetachViewerRequest,
@@ -1058,6 +1070,13 @@ impl DaemonClient {
         request: RenameSessionRequest,
     ) -> Result<EmptyResponse, ClientError> {
         self.call("sessions.rename", &request).await
+    }
+
+    pub async fn set_session_background(
+        &self,
+        request: SetSessionBackgroundRequest,
+    ) -> Result<EmptyResponse, ClientError> {
+        self.call("sessions.setBackground", &request).await
     }
 
     pub async fn detach_viewer(
@@ -1669,6 +1688,27 @@ mod tests {
         assert_eq!(
             json.get("name").and_then(|value| value.as_str()),
             Some("Client")
+        );
+    }
+
+    #[test]
+    fn set_session_background_request_serializes_with_camel_case_shape() {
+        let session_id = SessionId::new();
+        let request = super::SetSessionBackgroundRequest {
+            session_id,
+            background: true,
+        };
+
+        let json = serde_json::to_value(&request).expect("serialize background request");
+        let session_id_text = session_id.to_string();
+
+        assert_eq!(
+            json.get("sessionId").and_then(|value| value.as_str()),
+            Some(session_id_text.as_str())
+        );
+        assert_eq!(
+            json.get("background").and_then(|value| value.as_bool()),
+            Some(true)
         );
     }
 }

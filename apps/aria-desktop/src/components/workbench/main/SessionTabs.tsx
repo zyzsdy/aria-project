@@ -37,6 +37,7 @@ const SESSION_TAB_MESSAGES = defineMessages({
 });
 
 type SessionTab = {
+  isBackground?: boolean;
   tabId: string;
   title: string;
 };
@@ -184,7 +185,14 @@ export function SessionTabs({
               className={`tab ${tab.tabId === selectedTabId ? "tab-active" : ""}`}
             >
               <button className="tab-button" onClick={() => onSelectTab(tab.tabId)} type="button">
-                <span className="tab-title">{tab.title}</span>
+                <span className="tab-title">
+                  {tab.isBackground ? (
+                    <span aria-hidden="true" className="tab-background-marker">
+                      👻
+                    </span>
+                  ) : null}
+                  {tab.title}
+                </span>
               </button>
               <button
                 aria-label={t(SESSION_TAB_MESSAGES.closeTab, { title: tab.title })}

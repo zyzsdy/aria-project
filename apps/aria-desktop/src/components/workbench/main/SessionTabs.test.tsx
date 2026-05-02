@@ -89,6 +89,29 @@ describe("SessionTabs structure", () => {
     );
   });
 
+  it("marks background session tabs with a ghost prefix", () => {
+    const markup = renderToStaticMarkup(
+      <SessionTabs
+        busy={false}
+        defaultProfileId="builtin:powershell"
+        onCloseTab={() => undefined}
+        onCreateSession={() => undefined}
+        onCreateSessionWithProfile={() => undefined}
+        onSelectTab={() => undefined}
+        profiles={[]}
+        selectedTabId="terminal:session-2"
+        tabs={[
+          { tabId: "terminal:session-1", title: "Foreground", isBackground: false },
+          { tabId: "terminal:session-2", title: "Background", isBackground: true }
+        ]}
+      />
+    );
+
+    expect(markup).toContain('class="tab-background-marker"');
+    expect(markup).toMatch(/👻[\s\S]*Background/);
+    expect(markup).not.toMatch(/👻[\s\S]*Foreground/);
+  });
+
   it("opens a shell profile menu from the tab strip new session split button", async () => {
     const onCreateSession = vi.fn();
     const onCreateSessionWithProfile = vi.fn();

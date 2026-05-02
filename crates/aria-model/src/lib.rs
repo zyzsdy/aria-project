@@ -105,6 +105,7 @@ pub enum SessionTransportKind {
 pub enum SessionStatus {
     Starting,
     Running,
+    Background,
     Exited,
     Closed,
     Failed,
@@ -170,5 +171,12 @@ mod tests {
         let json =
             serde_json::to_string(&SessionStatus::Running).expect("serialize session status");
         assert_eq!(json, "\"running\"");
+    }
+
+    #[test]
+    fn background_session_status_serializes_as_snake_case() {
+        let json =
+            serde_json::to_string(&SessionStatus::Background).expect("serialize session status");
+        assert_eq!(json, "\"background\"");
     }
 }

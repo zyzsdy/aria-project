@@ -564,6 +564,10 @@ input[type="range"] {
   background: var(--success);
 }
 
+.session-dot-background {
+  background: #ff5dbd;
+}
+
 .session-dot-exited,
 .session-dot-closed,
 .session-dot-failed {
@@ -712,6 +716,11 @@ input[type="range"] {
   height: 100%;
   padding: 0 12px;
   text-align: left;
+}
+
+.tab-background-marker {
+  display: inline-block;
+  margin-right: 5px;
 }
 
 .tab-button:hover,

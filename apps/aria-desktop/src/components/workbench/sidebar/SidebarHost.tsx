@@ -58,6 +58,7 @@ type SidebarHostProps = {
   onSelectProject: (projectId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string) => void;
+  onSetSessionBackground: (sessionId: string, background: boolean) => void;
   onCloseSession: (sessionId: string) => void;
   openSidebar: SidebarPanel;
   openProfileMenu: boolean;
@@ -80,6 +81,7 @@ export function SidebarHost({
   onSelectProject,
   onSelectSession,
   onRenameSession,
+  onSetSessionBackground,
   onCloseSession,
   openSidebar,
   openProfileMenu,
@@ -185,6 +187,7 @@ export function SidebarHost({
           <SessionSidebar
             onSelectSession={onSelectSession}
             onRenameSession={onRenameSession}
+            onSetSessionBackground={onSetSessionBackground}
             onCloseSession={onCloseSession}
             selectedSessionId={selectedSessionId}
             sessions={sessions}

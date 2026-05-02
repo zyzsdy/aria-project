@@ -8,6 +8,7 @@ import {
   type ProjectTab,
   type ProjectWorkspace,
   type SessionMetadataDelta,
+  type SessionStatus,
   type SessionStreamMetadata,
   type SessionSummary,
   type SettingsGroup,
@@ -149,7 +150,7 @@ export function App() {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       if (
         settings.workspace.closeConfirmation !== "confirm_running_sessions" ||
-        !sessions.some((session) => session.status === "running")
+        !sessions.some((session) => isLiveSessionStatus(session.status))
       ) {
         return;
       }
@@ -360,6 +361,27 @@ export function App() {
     setRenamingSessionId(sessionId);
   }
 
+  async function handleSetSessionBackground(sessionId: string, background: boolean) {
+    startTransition(() => {
+      setSessions((current) =>
+        current.map((session) =>
+          session.sessionId === sessionId && isLiveSessionStatus(session.status)
+            ? {
+                ...session,
+                status: background ? "background" : "running"
+              }
+            : session
+        )
+      );
+    });
+    try {
+      await invoke("set_session_background", { sessionId, background });
+    } catch (error) {
+      logDesktopError(error);
+      await refreshWorkbench({ startupBehavior: "open_empty" });
+    }
+  }
+
   async function handleRenameConfirm(newTitle: string) {
     const sessionId = renamingSessionId;
     if (!sessionId) {
@@ -458,6 +480,9 @@ export function App() {
         }
         onRenameProject={handleRenameProject}
         onRenameSession={handleRenameSession}
+        onSetSessionBackground={(sessionId, background) =>
+          void handleSetSessionBackground(sessionId, background)
+        }
         onRenameConfirm={handleRenameConfirm}
         onResetSettingsGroup={handleResetSettingsGroup}
         onSelectProject={(projectId) => void handleSelectProject(projectId)}
@@ -505,7 +530,7 @@ export function App() {
   }
 
   function handleStreamDetached(_sessionId: string) {
-    void refreshWorkbench();
+    void refreshWorkbench({ startupBehavior: "open_empty" });
   }
 
   async function handleProjectNameConfirm(name: string) {
@@ -550,6 +575,7 @@ type AppShellProps = {
   onProjectLayoutChange: (layout: ProjectPaneNode, activePaneId: string) => void;
   onRenameProject: (projectId: string) => void;
   onRenameSession: (sessionId: string) => void;
+  onSetSessionBackground: (sessionId: string, background: boolean) => void;
   onRenameConfirm: (title: string) => void;
   onResetSettingsGroup: (group: SettingsGroup) => void;
   onSelectProject: (projectId: string) => void;
@@ -605,6 +631,7 @@ function AppShell({
   onProjectLayoutChange,
   onRenameProject,
   onRenameSession,
+  onSetSessionBackground,
   onRenameConfirm,
   onResetSettingsGroup,
   onSelectProject,
@@ -682,6 +709,7 @@ function AppShell({
             onRefresh={onRefresh}
             onRenameProject={onRenameProject}
             onRenameSession={onRenameSession}
+            onSetSessionBackground={onSetSessionBackground}
             onSelectProject={onSelectProject}
             onSelectSession={onSelectSession}
             openProfileMenu={isProfileMenuOpen}
@@ -779,6 +807,10 @@ function getSystemLocale() {
   }
 
   return navigator.languages?.[0] ?? navigator.language;
+}
+
+function isLiveSessionStatus(status: SessionStatus) {
+  return status === "running" || status === "background";
 }
 
 async function persistActiveProjectLayout(

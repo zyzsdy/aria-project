@@ -9,8 +9,8 @@ use aria_ipc::{
     ListSessionsRequest, ProjectSelector, ProjectSummary, ProjectWorkspace, RenameProjectRequest,
     RenameSessionRequest, ResetSettingsGroupRequest, RpcRequest, RpcResponse, SessionResizeRequest,
     SessionSelector, SessionSnapshot, SessionStreamFrame, SessionSummary, SessionWriteRequest,
-    SettingsGroup, UpdateAppSettingsPayload, UpdateProjectLayoutRequest, UpdateSettingsRequest,
-    ViewerAckRequest, DEFAULT_DAEMON_ADDR,
+    SetSessionBackgroundRequest, SettingsGroup, UpdateAppSettingsPayload,
+    UpdateProjectLayoutRequest, UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, ProjectId, SessionId, TerminalSize, ViewerId};
 use serde::Serialize;
@@ -175,6 +175,32 @@ async fn rename_session(
         .daemon
         .client
         .rename_session(RenameSessionRequest { session_id, title })
+        .await
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn set_session_background(
+    state: State<'_, DesktopState>,
+    session_id: String,
+    background: bool,
+) -> Result<(), String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    let session_id = session_id
+        .parse::<SessionId>()
+        .map_err(|error| format!("invalid session id: {error}"))?;
+    state
+        .daemon
+        .client
+        .set_session_background(SetSessionBackgroundRequest {
+            session_id,
+            background,
+        })
         .await
         .map(|_| ())
         .map_err(|error| error.to_string())
@@ -498,6 +524,7 @@ fn main() -> Result<()> {
             write_session,
             close_session,
             rename_session,
+            set_session_background,
             resize_session,
             attach_session_stream,
             detach_viewer,
