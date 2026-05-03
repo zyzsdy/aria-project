@@ -1342,6 +1342,32 @@ input[type="range"] {
 
 .project-row-shell {
   position: relative;
+  cursor: grab;
+  user-select: none;
+}
+
+.project-row-dragging {
+  opacity: 0.48;
+}
+
+.project-row-drop-before::before,
+.project-row-drop-after::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  z-index: 3;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.project-row-drop-before::before {
+  top: -1px;
+}
+
+.project-row-drop-after::after {
+  bottom: -1px;
 }
 
 .project-row {

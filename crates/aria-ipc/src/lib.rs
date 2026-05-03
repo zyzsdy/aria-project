@@ -178,6 +178,12 @@ pub struct ProjectSelector {
     pub project_id: ProjectId,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReorderProjectsRequest {
+    pub project_ids: Vec<ProjectId>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProjectLayoutRequest {
@@ -1006,6 +1012,11 @@ pub trait ProjectService: Send + Sync {
         &self,
         request: UpdateProjectLayoutRequest,
     ) -> Result<ProjectWorkspace, ContractError>;
+
+    async fn reorder_projects(
+        &self,
+        request: ReorderProjectsRequest,
+    ) -> Result<ProjectWorkspace, ContractError>;
 }
 
 #[derive(Clone, Debug)]
@@ -1186,6 +1197,13 @@ impl DaemonClient {
         request: UpdateProjectLayoutRequest,
     ) -> Result<ProjectWorkspace, ClientError> {
         self.call("projects.updateLayout", &request).await
+    }
+
+    pub async fn reorder_projects(
+        &self,
+        request: ReorderProjectsRequest,
+    ) -> Result<ProjectWorkspace, ClientError> {
+        self.call("projects.reorder", &request).await
     }
 
     pub async fn call<Req, Resp>(&self, method: &str, payload: &Req) -> Result<Resp, ClientError>

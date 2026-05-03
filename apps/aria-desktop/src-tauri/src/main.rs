@@ -6,9 +6,10 @@ use aria_ipc::{
     AppSettings, AttachViewerRequest, AttachViewerResponse, CreateLocalSessionRequest,
     CreateLocalSessionResponse, CreateProjectRequest, DaemonClient, DetachViewerRequest,
     GetProjectWorkspaceRequest, GetSettingsRequest, HealthRequest, HealthResponse,
-    ListSessionsRequest, ProjectSelector, ProjectSummary, ProjectWorkspace, RenameProjectRequest,
-    RenameSessionRequest, ResetSettingsGroupRequest, RpcRequest, RpcResponse, SessionResizeRequest,
-    SessionSelector, SessionSnapshot, SessionStreamFrame, SessionSummary, SessionWriteRequest,
+    ListSessionsRequest, ProjectSelector, ProjectSummary, ProjectWorkspace,
+    ReorderProjectsRequest, RenameProjectRequest, RenameSessionRequest,
+    ResetSettingsGroupRequest, RpcRequest, RpcResponse, SessionResizeRequest, SessionSelector,
+    SessionSnapshot, SessionStreamFrame, SessionSummary, SessionWriteRequest,
     SetSessionBackgroundRequest, SettingsGroup, UpdateAppSettingsPayload,
     UpdateProjectLayoutRequest, UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
@@ -470,6 +471,24 @@ async fn update_project_layout(
 }
 
 #[tauri::command]
+async fn reorder_projects(
+    state: State<'_, DesktopState>,
+    request: ReorderProjectsRequest,
+) -> Result<ProjectWorkspace, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    state
+        .daemon
+        .client
+        .reorder_projects(request)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn get_about_runtime_info() -> AboutRuntimeInfo {
     AboutRuntimeInfo {
         webview_version: tauri::webview_version().ok(),
@@ -538,6 +557,7 @@ fn main() -> Result<()> {
             delete_project,
             activate_project,
             update_project_layout,
+            reorder_projects,
             get_about_runtime_info,
             open_external_url
         ])

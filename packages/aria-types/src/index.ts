@@ -191,6 +191,10 @@ export interface UpdateProjectLayoutRequest {
   readonly closeSessionIfUnused?: string | null;
 }
 
+export interface ReorderProjectsRequest {
+  readonly projectIds: readonly string[];
+}
+
 export interface AppearanceSettings {
   readonly themeMode: ThemeMode;
   readonly themePreset: ThemePreset;

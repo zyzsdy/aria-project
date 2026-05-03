@@ -55,6 +55,7 @@ type SidebarHostProps = {
   onProfileMenuOpenChange: (next: boolean) => void;
   onRefresh: () => void;
   onRenameProject: (projectId: string) => void;
+  onReorderProjects?: (projectIds: string[]) => void;
   onSelectProject: (projectId: string) => void;
   onSelectSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string) => void;
@@ -78,6 +79,7 @@ export function SidebarHost({
   onProfileMenuOpenChange,
   onRefresh,
   onRenameProject,
+  onReorderProjects,
   onSelectProject,
   onSelectSession,
   onRenameSession,
@@ -179,6 +181,7 @@ export function SidebarHost({
           <ProjectSidebar
             onDeleteProject={onDeleteProject}
             onRenameProject={onRenameProject}
+            onReorderProjects={onReorderProjects}
             onSelectProject={onSelectProject}
             sessions={sessions}
             workspace={projectWorkspace}

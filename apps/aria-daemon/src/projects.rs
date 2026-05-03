@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Context, Result};
 use aria_ipc::{
     CreateProjectRequest, ProjectPane, ProjectPaneNode, ProjectSelector, ProjectSummary,
-    ProjectTabKind, ProjectWorkspace, RenameProjectRequest, UpdateProjectLayoutRequest,
+    ProjectTabKind, ProjectWorkspace, ReorderProjectsRequest, RenameProjectRequest,
+    UpdateProjectLayoutRequest,
 };
 use aria_model::{PaneId, ProjectId, SessionId};
 use std::{
@@ -121,6 +122,27 @@ impl ProjectStore {
             .ok_or_else(|| anyhow!("project not found"))?;
         project.active_pane_id = request.active_pane_id;
         project.layout = reconcile_pane_node(request.layout);
+        save_workspace_file(&self.path, &workspace)?;
+        Ok(workspace.clone())
+    }
+
+    pub async fn reorder(&self, request: ReorderProjectsRequest) -> Result<ProjectWorkspace> {
+        let mut workspace = self.workspace.write().await;
+        if request.project_ids.len() != workspace.projects.len() {
+            return Err(anyhow!("project id count mismatch"));
+        }
+
+        let mut reordered = Vec::with_capacity(request.project_ids.len());
+        for project_id in &request.project_ids {
+            let project = workspace
+                .projects
+                .iter()
+                .find(|project| project.project_id == *project_id)
+                .ok_or_else(|| anyhow!("project not found: {project_id}"))?;
+            reordered.push(project.clone());
+        }
+
+        workspace.projects = reordered;
         save_workspace_file(&self.path, &workspace)?;
         Ok(workspace.clone())
     }

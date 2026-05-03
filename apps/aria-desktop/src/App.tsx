@@ -12,7 +12,8 @@ import {
   type SessionStreamMetadata,
   type SessionSummary,
   type SettingsGroup,
-  type UpdateAppSettingsPayload
+  type UpdateAppSettingsPayload,
+  type ReorderProjectsRequest
 } from "@aria/types";
 import { startTransition, useEffect, useRef, useState } from "react";
 import { ModalDialog } from "./components/ModalDialog";
@@ -246,6 +247,33 @@ export function App() {
     setProjectWorkspace(nextWorkspace);
     try {
       const updated = await invoke<ProjectWorkspace>("activate_project", { projectId });
+      projectWorkspaceRef.current = updated;
+      setProjectWorkspace(updated);
+    } catch (error) {
+      logDesktopError(error);
+    }
+  }
+
+  async function handleReorderProjects(projectIds: string[]) {
+    const currentProjects = projectWorkspaceRef.current.projects;
+    const reordered = projectIds
+      .map((id) => currentProjects.find((p) => p.projectId === id))
+      .filter((p): p is ProjectSummary => p !== null);
+
+    if (reordered.length !== currentProjects.length) {
+      return;
+    }
+
+    const nextWorkspace: ProjectWorkspace = {
+      ...projectWorkspaceRef.current,
+      projects: reordered
+    };
+    projectWorkspaceRef.current = nextWorkspace;
+    setProjectWorkspace(nextWorkspace);
+
+    try {
+      const request: ReorderProjectsRequest = { projectIds };
+      const updated = await invoke<ProjectWorkspace>("reorder_projects", { request });
       projectWorkspaceRef.current = updated;
       setProjectWorkspace(updated);
     } catch (error) {
@@ -518,6 +546,7 @@ export function App() {
           void handleProjectLayoutChange(layout, activePaneId)
         }
         onRenameProject={handleRenameProject}
+        onReorderProjects={(projectIds) => void handleReorderProjects(projectIds)}
         onRenameSession={handleRenameSession}
         onSetSessionBackground={(sessionId, background) =>
           void handleSetSessionBackground(sessionId, background)
@@ -620,6 +649,7 @@ type AppShellProps = {
   onRefresh: () => void;
   onProjectLayoutChange: (layout: ProjectPaneNode, activePaneId: string) => void;
   onRenameProject: (projectId: string) => void;
+  onReorderProjects?: (projectIds: string[]) => void;
   onRenameSession: (sessionId: string) => void;
   onSetSessionBackground: (sessionId: string, background: boolean) => void;
   onRenameConfirm: (title: string) => void;
@@ -678,6 +708,7 @@ function AppShell({
   onRefresh,
   onProjectLayoutChange,
   onRenameProject,
+  onReorderProjects,
   onRenameSession,
   onSetSessionBackground,
   onRenameConfirm,
@@ -758,6 +789,7 @@ function AppShell({
             onProfileMenuOpenChange={onProfileMenuOpenChange}
             onRefresh={onRefresh}
             onRenameProject={onRenameProject}
+            onReorderProjects={onReorderProjects}
             onRenameSession={onRenameSession}
             onSetSessionBackground={onSetSessionBackground}
             onSelectProject={onSelectProject}

@@ -11,9 +11,10 @@ use aria_ipc::{
     AttachViewerRequest, ContractError, CreateLocalSessionRequest, DaemonClient, DaemonInfo,
     DetachViewerRequest, EmptyResponse, GetProjectWorkspaceRequest, GetSettingsRequest,
     HealthRequest, HealthResponse, ListSessionsRequest, ProjectSelector, ReadScrollbackRequest,
-    RenameProjectRequest, RenameSessionRequest, ResetSettingsGroupRequest, RpcRequest, RpcResponse,
-    SessionResizeRequest, SessionSelector, SessionWriteRequest, SetSessionBackgroundRequest,
-    UpdateProjectLayoutRequest, UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
+    ReorderProjectsRequest, RenameProjectRequest, RenameSessionRequest, ResetSettingsGroupRequest,
+    RpcRequest, RpcResponse, SessionResizeRequest, SessionSelector, SessionWriteRequest,
+    SetSessionBackgroundRequest, UpdateProjectLayoutRequest, UpdateSettingsRequest,
+    ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, HealthStatus, SessionId};
 use aria_session::SessionManager;
@@ -381,6 +382,13 @@ async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcRe
                     Err(error) => err(ContractError::Unavailable(error.to_string())),
                 }
             }
+            Err(error) => err(error),
+        },
+        "projects.reorder" => match decode::<ReorderProjectsRequest>(request.payload) {
+            Ok(payload) => match state.projects.reorder(payload).await {
+                Ok(response) => ok(response),
+                Err(error) => err(ContractError::Unavailable(error.to_string())),
+            },
             Err(error) => err(error),
         },
         method => err(ContractError::Unavailable(format!(
