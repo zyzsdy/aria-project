@@ -52,6 +52,7 @@ describe("SessionTabs structure", () => {
         onCreateSession={() => undefined}
         onCreateSessionWithProfile={() => undefined}
         onSelectTab={() => undefined}
+        paneId="pane-a"
         profiles={[]}
         selectedTabId="terminal:session-1"
         tabs={[{ tabId: "terminal:session-1", title: "Example tab" }]}
@@ -75,6 +76,7 @@ describe("SessionTabs structure", () => {
         onCreateSession={() => undefined}
         onCreateSessionWithProfile={() => undefined}
         onSelectTab={() => undefined}
+        paneId="pane-a"
         profiles={[]}
         selectedTabId="terminal:session-2"
         tabs={[
@@ -85,7 +87,7 @@ describe("SessionTabs structure", () => {
     );
 
     expect(markup).toMatch(
-      /class="tab-strip-track"[\s\S]*class="tab "[\s\S]*One[\s\S]*class="tab tab-active"[\s\S]*Two[\s\S]*class="sidebar-split-button tab-strip-new-session"/
+      /class="tab-strip-track\s*"[\s\S]*class="tab"[\s\S]*One[\s\S]*class="tab tab-active"[\s\S]*Two[\s\S]*class="sidebar-split-button tab-strip-new-session"/
     );
   });
 
@@ -98,6 +100,7 @@ describe("SessionTabs structure", () => {
         onCreateSession={() => undefined}
         onCreateSessionWithProfile={() => undefined}
         onSelectTab={() => undefined}
+        paneId="pane-a"
         profiles={[]}
         selectedTabId="terminal:session-2"
         tabs={[
@@ -126,6 +129,7 @@ describe("SessionTabs structure", () => {
           onCreateSession={onCreateSession}
           onCreateSessionWithProfile={onCreateSessionWithProfile}
           onSelectTab={() => undefined}
+          paneId="pane-a"
           profiles={[
             {
               id: "builtin:powershell",
@@ -191,6 +195,7 @@ describe("SessionTabs structure", () => {
           onRenameTab={onRenameTab}
           onSelectTab={() => undefined}
           onSplitPane={onSplitPane}
+          paneId="pane-a"
           profiles={[]}
           selectedTabId="terminal:session-1"
           tabs={[
@@ -269,6 +274,7 @@ describe("SessionTabs structure", () => {
           onCreateSessionWithProfile={() => undefined}
           onRenameTab={() => undefined}
           onSelectTab={() => undefined}
+          paneId="pane-a"
           profiles={[]}
           selectedTabId="settings-tab"
           tabs={[
@@ -311,6 +317,81 @@ describe("SessionTabs structure", () => {
     expect(container?.textContent).not.toContain("Detach");
   });
 
+  it("moves a tab with pointer events instead of browser native drag-and-drop", async () => {
+    const onMoveTab = vi.fn();
+    root = createRoot(container!);
+
+    act(() => {
+      root!.render(
+        <SessionTabs
+          busy={false}
+          defaultProfileId="builtin:powershell"
+          onCloseTab={() => undefined}
+          onCreateSession={() => undefined}
+          onCreateSessionWithProfile={() => undefined}
+          onMoveTab={onMoveTab}
+          onSelectTab={() => undefined}
+          paneId="pane-a"
+          profiles={[]}
+          selectedTabId="tab-a"
+          tabs={[
+            { tabId: "tab-a", title: "Alpha" },
+            { tabId: "tab-b", title: "Beta" }
+          ]}
+        />
+      );
+    });
+
+    const tabs = container!.querySelectorAll(".tab");
+    mockRect(tabs[1]!, { left: 10, width: 100 });
+    mockElementFromPoint(tabs[1]!);
+
+    act(() => {
+      tabs[0]!.dispatchEvent(createPointerEvent("pointerdown", 1, 0, 0));
+    });
+    act(() => {
+      window.dispatchEvent(createPointerEvent("pointermove", 1, 80, 0));
+    });
+    act(() => {
+      window.dispatchEvent(createPointerEvent("pointerup", 1, 80, 0));
+    });
+
+    expect(onMoveTab).toHaveBeenCalledWith("pane-a", "tab-a", "pane-a", 2);
+    expect(container!.querySelector(".tab-dragging")).toBeNull();
+  });
+
+  it("renders a shared cross-pane drop marker for the target pane", async () => {
+    root = createRoot(container!);
+
+    act(() => {
+      root!.render(
+        <SessionTabs
+          busy={false}
+          defaultProfileId="builtin:powershell"
+          dragPreview={{
+            draggingTabId: "tab-a",
+            dropIndex: 1,
+            dropPlacement: "after",
+            dropTabId: "tab-b",
+            sourcePaneId: "pane-a",
+            targetPaneId: "pane-b"
+          }}
+          onCloseTab={() => undefined}
+          onCreateSession={() => undefined}
+          onCreateSessionWithProfile={() => undefined}
+          onMoveTab={() => undefined}
+          onSelectTab={() => undefined}
+          paneId="pane-b"
+          profiles={[]}
+          selectedTabId="tab-b"
+          tabs={[{ tabId: "tab-b", title: "Beta" }]}
+        />
+      );
+    });
+
+    expect(container!.querySelector(".tab-drop-after")).not.toBeNull();
+  });
+
   function findButton(label: string) {
     const button = [...(container?.querySelectorAll("button") ?? [])].find((candidate) => {
       const ariaLabel = candidate.getAttribute("aria-label");
@@ -324,3 +405,42 @@ describe("SessionTabs structure", () => {
     return button;
   }
 });
+
+function mockRect(element: Element, rect: { left: number; width: number }) {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      bottom: 24,
+      height: 24,
+      left: rect.left,
+      right: rect.left + rect.width,
+      top: 0,
+      width: rect.width,
+      x: rect.left,
+      y: 0,
+      toJSON: () => undefined
+    })
+  });
+}
+
+function mockElementFromPoint(element: Element) {
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: () => element
+  });
+}
+
+function createPointerEvent(type: string, pointerId: number, clientX: number, clientY: number) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    button: 0,
+    cancelable: true,
+    clientX,
+    clientY
+  });
+  Object.defineProperty(event, "pointerId", {
+    configurable: true,
+    value: pointerId
+  });
+  return event;
+}

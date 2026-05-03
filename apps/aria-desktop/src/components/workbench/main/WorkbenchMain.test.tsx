@@ -19,6 +19,7 @@ describe("WorkbenchMain", () => {
         onActivatePane={() => undefined}
         onCloseProjectTab={() => undefined}
         onDetachProjectTab={() => undefined}
+        onMoveProjectTab={() => undefined}
         onCreateSession={() => undefined}
         onCreateSessionWithProfile={() => undefined}
         onProjectLayoutChange={() => undefined}
@@ -55,6 +56,7 @@ describe("WorkbenchMain", () => {
         onActivatePane={() => undefined}
         onCloseProjectTab={() => undefined}
         onDetachProjectTab={() => undefined}
+        onMoveProjectTab={() => undefined}
         onCreateSession={() => undefined}
         onCreateSessionWithProfile={() => undefined}
         onProjectLayoutChange={() => undefined}

@@ -10,10 +10,14 @@ import type {
   SettingsGroup
 } from "@aria/types";
 import { Columns2, Rows2 } from "lucide-react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import { useState, type PointerEvent as ReactPointerEvent } from "react";
 import { defineMessages } from "../../../i18n/messages";
 import { useT } from "../../../i18n/react";
-import { SessionTabs } from "./SessionTabs";
+import {
+  createEmptyTabDragPreview,
+  SessionTabs,
+  type SessionTabDragPreview
+} from "./SessionTabs";
 import { HtmlTabHost } from "./HtmlTabHost";
 import { TerminalTabSurface } from "./TerminalTabSurface";
 import { clampSplitRatio, normalizePaneNode } from "./projectLayoutState";
@@ -53,6 +57,12 @@ type ProjectWorkspaceViewProps = {
   onLayoutChange: (layout: ProjectPaneNode, activePaneId: string) => void;
   onResetSettingsGroup: (group: SettingsGroup) => void;
   onDetachTab: (paneId: string, tabId: string, sessionId: string) => void;
+  onMoveTab: (
+    sourcePaneId: string,
+    tabId: string,
+    targetPaneId: string,
+    targetIndex: number
+  ) => void;
   onRenameSession: (sessionId: string) => void;
   onSelectTab: (paneId: string, tabId: string) => void;
   onSelectSettingsGroup: (group: SettingsGroup) => void;
@@ -81,6 +91,7 @@ export function ProjectWorkspaceView({
   onLayoutChange,
   onResetSettingsGroup,
   onDetachTab,
+  onMoveTab,
   onRenameSession,
   onSelectTab,
   onSelectSettingsGroup,
@@ -92,12 +103,17 @@ export function ProjectWorkspaceView({
   shouldCloseSessionIfUnusedOnDispose,
   onUpdateSettings
 }: ProjectWorkspaceViewProps) {
+  const [tabDragPreview, setTabDragPreview] = useState<SessionTabDragPreview>(
+    createEmptyTabDragPreview
+  );
+
   return (
     <section className="terminal-region terminal-workspace project-workspace">
       <PaneNodeView
         activePaneId={activePaneId}
         busy={busy}
         defaultProfileId={defaultProfileId}
+        tabDragPreview={tabDragPreview}
         layout={layout}
         profiles={profiles}
         rootLayout={layout}
@@ -111,6 +127,8 @@ export function ProjectWorkspaceView({
         onLayoutChange={onLayoutChange}
         onResetSettingsGroup={onResetSettingsGroup}
         onDetachTab={onDetachTab}
+        onMoveTab={onMoveTab}
+        onMoveTabPreviewChange={setTabDragPreview}
         onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
         onSelectSettingsGroup={onSelectSettingsGroup}
@@ -128,6 +146,8 @@ export function ProjectWorkspaceView({
 
 type PaneNodeViewProps = ProjectWorkspaceViewProps & {
   rootLayout: ProjectPaneNode;
+  tabDragPreview: SessionTabDragPreview;
+  onMoveTabPreviewChange: (preview: SessionTabDragPreview) => void;
 };
 
 function PaneNodeView({
@@ -137,6 +157,7 @@ function PaneNodeView({
   layout,
   profiles,
   rootLayout,
+  tabDragPreview,
   selectedSettingsGroup,
   sessions,
   settings,
@@ -147,6 +168,8 @@ function PaneNodeView({
   onLayoutChange,
   onResetSettingsGroup,
   onDetachTab,
+  onMoveTab,
+  onMoveTabPreviewChange,
   onRenameSession,
   onSelectTab,
   onSelectSettingsGroup,
@@ -164,6 +187,7 @@ function PaneNodeView({
         pane={layout}
         busy={busy}
         defaultProfileId={defaultProfileId}
+        tabDragPreview={tabDragPreview}
         isActivePane={layout.paneId === activePaneId}
         profiles={profiles}
         selectedSettingsGroup={selectedSettingsGroup}
@@ -175,6 +199,8 @@ function PaneNodeView({
         onCloseTab={onCloseTab}
         onResetSettingsGroup={onResetSettingsGroup}
         onDetachTab={onDetachTab}
+        onMoveTab={onMoveTab}
+        onMoveTabPreviewChange={onMoveTabPreviewChange}
         onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
         onSelectSettingsGroup={onSelectSettingsGroup}
@@ -235,6 +261,7 @@ function PaneNodeView({
         busy={busy}
         defaultProfileId={defaultProfileId}
         layout={split.first}
+        tabDragPreview={tabDragPreview}
         profiles={profiles}
         rootLayout={rootLayout}
         selectedSettingsGroup={selectedSettingsGroup}
@@ -247,6 +274,8 @@ function PaneNodeView({
         onLayoutChange={onLayoutChange}
         onResetSettingsGroup={onResetSettingsGroup}
         onDetachTab={onDetachTab}
+        onMoveTab={onMoveTab}
+        onMoveTabPreviewChange={onMoveTabPreviewChange}
         onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
         onSelectSettingsGroup={onSelectSettingsGroup}
@@ -269,6 +298,7 @@ function PaneNodeView({
         busy={busy}
         defaultProfileId={defaultProfileId}
         layout={split.second}
+        tabDragPreview={tabDragPreview}
         profiles={profiles}
         rootLayout={rootLayout}
         selectedSettingsGroup={selectedSettingsGroup}
@@ -281,6 +311,8 @@ function PaneNodeView({
         onLayoutChange={onLayoutChange}
         onResetSettingsGroup={onResetSettingsGroup}
         onDetachTab={onDetachTab}
+        onMoveTab={onMoveTab}
+        onMoveTabPreviewChange={onMoveTabPreviewChange}
         onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
         onSelectSettingsGroup={onSelectSettingsGroup}
@@ -305,12 +337,20 @@ type ProjectPaneViewProps = {
   selectedSettingsGroup: SettingsGroup;
   sessions: SessionSummary[];
   settings: AppSettings;
+  tabDragPreview: SessionTabDragPreview;
   onCreateSession: () => void;
   onCreateSessionWithProfile: (profileId: string) => void;
   onActivatePane: (paneId: string) => void;
   onCloseTab: (paneId: string, tabId: string) => void;
   onResetSettingsGroup: (group: SettingsGroup) => void;
   onDetachTab: (paneId: string, tabId: string, sessionId: string) => void;
+  onMoveTab: (
+    sourcePaneId: string,
+    tabId: string,
+    targetPaneId: string,
+    targetIndex: number
+  ) => void;
+  onMoveTabPreviewChange: (preview: SessionTabDragPreview) => void;
   onRenameSession: (sessionId: string) => void;
   onSelectTab: (paneId: string, tabId: string) => void;
   onSelectSettingsGroup: (group: SettingsGroup) => void;
@@ -332,12 +372,15 @@ function ProjectPaneView({
   selectedSettingsGroup,
   sessions,
   settings,
+  tabDragPreview,
   onCreateSession,
   onCreateSessionWithProfile,
   onActivatePane,
   onCloseTab,
   onResetSettingsGroup,
   onDetachTab,
+  onMoveTab,
+  onMoveTabPreviewChange,
   onRenameSession,
   onSelectTab,
   onSelectSettingsGroup,
@@ -365,13 +408,17 @@ function ProjectPaneView({
         <SessionTabs
           busy={busy}
           defaultProfileId={defaultProfileId}
+          dragPreview={tabDragPreview}
           onCloseTab={(tabId) => onCloseTab(pane.paneId, tabId)}
           onCreateSession={onCreateSession}
           onCreateSessionWithProfile={onCreateSessionWithProfile}
           onDetachTab={(tabId, sessionId) => onDetachTab(pane.paneId, tabId, sessionId)}
+          onMoveTab={onMoveTab}
+          onMoveTabPreviewChange={onMoveTabPreviewChange}
           onRenameTab={(_tabId, sessionId) => onRenameSession(sessionId)}
           onSelectTab={(tabId) => onSelectTab(pane.paneId, tabId)}
           onSplitPane={(direction) => onSplitPane(pane.paneId, direction)}
+          paneId={pane.paneId}
           profiles={profiles}
           selectedTabId={activeTab?.tabId ?? null}
           tabs={pane.tabs.map((tab) => ({

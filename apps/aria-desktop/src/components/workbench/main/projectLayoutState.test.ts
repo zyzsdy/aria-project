@@ -6,6 +6,7 @@ import {
   closeProjectTab,
   createEmptyProjectWorkspace,
   openHtmlTabInActiveProject,
+  moveProjectTab,
   selectProject,
   selectProjectTab,
   splitActivePane,
@@ -420,6 +421,103 @@ describe("project layout state", () => {
         tabs: [terminalTab("tab-a", "session-a")]
       });
     }
+  });
+
+  it("reorders tabs inside the same pane and keeps the moved tab active", () => {
+    const tabA = terminalTab("tab-a", "session-a");
+    const tabB = terminalTab("tab-b", "session-b");
+    const tabC = terminalTab("tab-c", "session-c");
+    const workspace = createWorkspaceWithSplit({
+      activeProjectId: "project-a",
+      activePaneId: "pane-a",
+      firstTabs: [tabA, tabB, tabC],
+      firstActiveTabId: "tab-b",
+      secondTabs: [],
+      secondActiveTabId: null
+    });
+
+    const next = moveProjectTab(workspace, "pane-a", "tab-a", "pane-a", 3);
+    const project = next.projects[0];
+
+    expect(project.activePaneId).toBe("pane-a");
+    expect(project.layout.type).toBe("split");
+    if (project.layout.type === "split" && project.layout.first.type === "leaf") {
+      expect(project.layout.first.tabs.map((tab) => tab.tabId)).toEqual([
+        "tab-b",
+        "tab-c",
+        "tab-a"
+      ]);
+      expect(project.layout.first.activeTabId).toBe("tab-a");
+    }
+  });
+
+  it("moves a tab across panes at the requested index and activates the target pane", () => {
+    const tabA = terminalTab("tab-a", "session-a");
+    const tabB = terminalTab("tab-b", "session-b");
+    const tabC = terminalTab("tab-c", "session-c");
+    const workspace = createWorkspaceWithSplit({
+      activeProjectId: "project-a",
+      activePaneId: "pane-a",
+      firstTabs: [tabA, tabB],
+      firstActiveTabId: "tab-b",
+      secondTabs: [tabC],
+      secondActiveTabId: "tab-c"
+    });
+
+    const next = moveProjectTab(workspace, "pane-a", "tab-a", "pane-b", 0);
+    const project = next.projects[0];
+
+    expect(project.activePaneId).toBe("pane-b");
+    expect(project.layout.type).toBe("split");
+    if (
+      project.layout.type === "split" &&
+      project.layout.first.type === "leaf" &&
+      project.layout.second.type === "leaf"
+    ) {
+      expect(project.layout.first.tabs.map((tab) => tab.tabId)).toEqual(["tab-b"]);
+      expect(project.layout.first.activeTabId).toBe("tab-b");
+      expect(project.layout.second.tabs.map((tab) => tab.tabId)).toEqual(["tab-a", "tab-c"]);
+      expect(project.layout.second.activeTabId).toBe("tab-a");
+    }
+  });
+
+  it("collapses the source pane when moving its last tab into another pane", () => {
+    const tabA = terminalTab("tab-a", "session-a");
+    const tabB = terminalTab("tab-b", "session-b");
+    const workspace = createWorkspaceWithSplit({
+      activeProjectId: "project-a",
+      activePaneId: "pane-a",
+      firstTabs: [tabA],
+      firstActiveTabId: "tab-a",
+      secondTabs: [tabB],
+      secondActiveTabId: "tab-b"
+    });
+
+    const next = moveProjectTab(workspace, "pane-a", "tab-a", "pane-b", 1);
+
+    expect(next.projects[0].activePaneId).toBe("pane-b");
+    expect(next.projects[0].layout).toEqual({
+      type: "leaf",
+      paneId: "pane-b",
+      activeTabId: "tab-a",
+      tabs: [tabB, tabA]
+    });
+  });
+
+  it("returns the original workspace for invalid tab moves", () => {
+    const workspace = createWorkspaceWithSplit({
+      activeProjectId: "project-a",
+      activePaneId: "pane-a",
+      firstTabs: [terminalTab("tab-a", "session-a")],
+      firstActiveTabId: "tab-a",
+      secondTabs: [],
+      secondActiveTabId: null
+    });
+
+    expect(moveProjectTab(workspace, "pane-a", "missing-tab", "pane-b", 0)).toBe(workspace);
+    expect(moveProjectTab(workspace, "missing-pane", "tab-a", "pane-b", 0)).toBe(workspace);
+    expect(moveProjectTab(workspace, "pane-a", "tab-a", "missing-pane", 0)).toBe(workspace);
+    expect(moveProjectTab(workspace, "pane-a", "tab-a", "pane-a", 0)).toBe(workspace);
   });
 
   it("updates a project layout and clamps split ratios", () => {

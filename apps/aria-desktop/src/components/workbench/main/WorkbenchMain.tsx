@@ -30,6 +30,12 @@ type WorkbenchMainProps = {
   onActivatePane: (paneId: string) => void;
   onCloseProjectTab: (paneId: string, tabId: string) => void;
   onDetachProjectTab: (paneId: string, tabId: string, sessionId: string) => void;
+  onMoveProjectTab: (
+    sourcePaneId: string,
+    tabId: string,
+    targetPaneId: string,
+    targetIndex: number
+  ) => void;
   onProjectLayoutChange: (layout: ProjectPaneNode, activePaneId: string) => void;
   onRenameSession: (sessionId: string) => void;
   onSelectProjectTab: (paneId: string, tabId: string) => void;
@@ -57,6 +63,7 @@ export function WorkbenchMain({
   onActivatePane,
   onCloseProjectTab,
   onDetachProjectTab,
+  onMoveProjectTab,
   onProjectLayoutChange,
   onRenameSession,
   onSelectProjectTab,
@@ -82,6 +89,7 @@ export function WorkbenchMain({
             onCloseTab={onCloseProjectTab}
             onDetachTab={onDetachProjectTab}
             onLayoutChange={onProjectLayoutChange}
+            onMoveTab={onMoveProjectTab}
             onRenameSession={onRenameSession}
             onResetSettingsGroup={onResetSettingsGroup}
             onSelectTab={onSelectProjectTab}

@@ -14,6 +14,16 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock
 }));
 
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    close: vi.fn(),
+    isMaximized: vi.fn(async () => false),
+    minimize: vi.fn(),
+    onResized: vi.fn(async () => () => undefined),
+    toggleMaximize: vi.fn()
+  })
+}));
+
 vi.mock("./components/workbench/main/TerminalTabSurface", () => ({
   TerminalTabSurface: ({
     onStreamDetached,
@@ -982,6 +992,118 @@ describe("App", () => {
     );
   });
 
+  it("persists a dragged tab moved into another pane", async () => {
+    const settings = createPlatformDefaultSettings("windows");
+    const alphaSession = createSessionSummary("session-a", "Alpha");
+    const betaSession = createSessionSummary("session-b", "Beta");
+    type PersistedProjectLayoutRequest = {
+      activePaneId: string;
+      layout: ProjectWorkspace["projects"][number]["layout"];
+      projectId: string;
+    };
+    const updateRequests: PersistedProjectLayoutRequest[] = [];
+    let workspace = createProjectWorkspace({
+      activePaneId: "pane-a",
+      layout: {
+        type: "split",
+        splitId: "split-a",
+        direction: "horizontal",
+        ratio: 0.5,
+        first: {
+          type: "leaf",
+          paneId: "pane-a",
+          activeTabId: "tab-a",
+          tabs: [
+            {
+              kind: "terminal",
+              pageId: null,
+              sessionId: "session-a",
+              tabId: "tab-a",
+              title: "Alpha"
+            }
+          ]
+        },
+        second: {
+          type: "leaf",
+          paneId: "pane-b",
+          activeTabId: "tab-b",
+          tabs: [
+            {
+              kind: "terminal",
+              pageId: null,
+              sessionId: "session-b",
+              tabId: "tab-b",
+              title: "Beta"
+            }
+          ]
+        }
+      }
+    });
+
+    invokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
+      switch (command) {
+        case "get_app_settings":
+          return settings;
+        case "list_sessions":
+          return [alphaSession, betaSession];
+        case "get_project_workspace":
+          return workspace;
+        case "update_project_layout":
+          {
+            const request = payload?.request as PersistedProjectLayoutRequest;
+            updateRequests.push(request);
+            workspace = {
+              ...workspace,
+              projects: workspace.projects.map((project) =>
+                project.projectId === request.projectId
+                  ? {
+                      ...project,
+                      activePaneId: request.activePaneId,
+                      layout: request.layout
+                    }
+                  : project
+              )
+            };
+            return workspace;
+          }
+        default:
+          throw new Error(`Unexpected invoke command: ${command}`);
+      }
+    });
+
+    renderApp();
+    await flushAsyncWork();
+
+    const tabs = await waitForTabCount(2);
+    act(() => {
+      tabs[0].dispatchEvent(createPointerEvent("pointerdown", 1, 0, 0));
+    });
+    mockRect(tabs[1], { left: 10, width: 100 });
+    mockElementFromPoint(tabs[1]);
+    act(() => {
+      window.dispatchEvent(createPointerEvent("pointermove", 1, 90, 0));
+    });
+    expect(tabs[1].classList.contains("tab-drop-after")).toBe(true);
+    act(() => {
+      window.dispatchEvent(createPointerEvent("pointerup", 1, 90, 0));
+    });
+    await waitForInvoke("update_project_layout");
+    await flushAsyncWork();
+
+    const persistedRequest = updateRequests[updateRequests.length - 1]!;
+    expect(persistedRequest).toBeDefined();
+    expect(persistedRequest.activePaneId).toBe("pane-b");
+    expect(persistedRequest.layout).toEqual({
+      type: "leaf",
+      paneId: "pane-b",
+      activeTabId: "tab-a",
+      tabs: [
+        expect.objectContaining({ tabId: "tab-b", sessionId: "session-b" }),
+        expect.objectContaining({ tabId: "tab-a", sessionId: "session-a" })
+      ]
+    });
+  });
+
   function renderApp() {
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -1020,6 +1142,19 @@ describe("App", () => {
     }
 
     throw new Error(`Unable to find element: ${selector}`);
+  }
+
+  async function waitForTabCount(count: number) {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const tabs = [...(container?.querySelectorAll(".tab") ?? [])];
+      if (tabs.length === count) {
+        return tabs;
+      }
+
+      await flushAsyncWork();
+    }
+
+    throw new Error(`Unable to find ${count} tabs`);
   }
 
   async function waitForInvoke(command: string) {
@@ -1063,6 +1198,45 @@ describe("App", () => {
     }
   }
 });
+
+function mockRect(element: Element, rect: { left: number; width: number }) {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      bottom: 24,
+      height: 24,
+      left: rect.left,
+      right: rect.left + rect.width,
+      top: 0,
+      width: rect.width,
+      x: rect.left,
+      y: 0,
+      toJSON: () => undefined
+    })
+  });
+}
+
+function mockElementFromPoint(element: Element) {
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: () => element
+  });
+}
+
+function createPointerEvent(type: string, pointerId: number, clientX: number, clientY: number) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    button: 0,
+    cancelable: true,
+    clientX,
+    clientY
+  });
+  Object.defineProperty(event, "pointerId", {
+    configurable: true,
+    value: pointerId
+  });
+  return event;
+}
 
 function createSessionSummary(sessionId: string, title: string): SessionSummary {
   return {

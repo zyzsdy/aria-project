@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 const styles = readFileSync(new URL("../../../styles.css", import.meta.url), "utf8");
+const baseStyles = styles.slice(styles.indexOf(".tab-strip-new-session {"));
 
 describe("tab strip styles", () => {
   it("prevents vertical scrolling and hides the native scrollbar in favor of a hover-only overlaid 1px rail", () => {
@@ -62,6 +63,63 @@ describe("tab strip styles", () => {
     );
     expect(styles).toMatch(
       /\.tab-strip-new-session\s+\.sidebar-split-button-segment\s*{[^}]*width:\s*24px;[^}]*height:\s*22px;/s
+    );
+  });
+
+  it("keeps dark theme tab strip new session controls flat until hover", () => {
+    expect(baseStyles).toMatch(
+      /\.tab-strip-new-session\s*{[^}]*border:\s*0;[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;/s
+    );
+    expect(baseStyles).toMatch(
+      /\.tab-strip-new-session\s+\.sidebar-split-button-segment\s*{[^}]*width:\s*24px;[^}]*height:\s*22px;[^}]*border:\s*0;[^}]*background:\s*transparent;/s
+    );
+    expect(baseStyles).toMatch(
+      /\.tab-strip-new-session\s+\.sidebar-split-button-toggle\s*{[^}]*border-left:\s*0;/s
+    );
+    expect(baseStyles).toMatch(
+      /\.tab-strip-new-session\s+\.sidebar-split-button-segment:hover,[\s\S]*\.tab-strip-new-session\s+\.sidebar-split-button-segment:focus-visible\s*{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.\d+\);/s
+    );
+  });
+
+  it("keeps light theme tab buttons inheriting the tab state instead of global button chrome", () => {
+    expect(styles).toMatch(
+      /\[data-theme-mode="light"\]\s+\.tab-button,\s*\[data-theme-mode="light"\]\s+\.tab-close-button\s*{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*color:\s*inherit;/s
+    );
+    expect(styles).toMatch(
+      /\[data-theme-mode="light"\]\s+\.tab-active\s*{[^}]*background:\s*var\(--bg-tab-active\);/s
+    );
+  });
+
+  it("keeps the light theme tab strip new session control visually flat until hover", () => {
+    expect(styles).toMatch(
+      /\[data-theme-mode="light"\]\s+\.tab-strip-new-session\s*{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;/s
+    );
+    expect(styles).toMatch(
+      /\[data-theme-mode="light"\]\s+\.tab-strip-new-session\s+\.sidebar-split-button-segment\s*{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*color:\s*var\(--text-secondary\);/s
+    );
+    expect(styles).toMatch(
+      /\[data-theme-mode="light"\]\s+\.tab-strip-new-session\s+\.sidebar-split-button-segment:hover,[\s\S]*\[data-theme-mode="light"\]\s+\.tab-strip-new-session\s+\.sidebar-split-button-segment:focus-visible\s*{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.\d+\);/s
+    );
+  });
+
+  it("mirrors the light tab strip overrides in system light mode", () => {
+    expect(styles).toMatch(
+      /@media\s*\(prefers-color-scheme:\s*light\)\s*{[\s\S]*\[data-theme-mode="system"\]\s+\.tab-button,\s*\[data-theme-mode="system"\]\s+\.tab-close-button\s*{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*color:\s*inherit;/s
+    );
+    expect(styles).toMatch(
+      /@media\s*\(prefers-color-scheme:\s*light\)\s*{[\s\S]*\[data-theme-mode="system"\]\s+\.tab-strip-new-session\s*{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;/s
+    );
+  });
+
+  it("keeps project pane split icon buttons flat in light modes until hover", () => {
+    expect(styles).toMatch(
+      /\[data-theme-mode="light"\]\s+\.sidebar-icon-button\s*{[^}]*border:\s*0;[^}]*background:\s*transparent;/s
+    );
+    expect(styles).toMatch(
+      /\[data-theme-mode="light"\]\s+\.sidebar-icon-button:hover,[\s\S]*\[data-theme-mode="light"\]\s+\.sidebar-icon-button:focus-visible\s*{[^}]*border:\s*0;[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.\d+\);/s
+    );
+    expect(styles).toMatch(
+      /@media\s*\(prefers-color-scheme:\s*light\)\s*{[\s\S]*\[data-theme-mode="system"\]\s+\.sidebar-icon-button\s*{[^}]*border:\s*0;[^}]*background:\s*transparent;/s
     );
   });
 

@@ -26,6 +26,7 @@ import {
   closeProjectTab,
   createEmptyProjectWorkspace,
   getActiveProject,
+  moveProjectTab,
   openHtmlTabInActiveProject,
   selectProject,
   selectProjectTab,
@@ -360,6 +361,17 @@ export function App() {
     await applyProjectWorkspace(splitPane(projectWorkspaceRef.current, paneId, direction));
   }
 
+  async function handleMoveProjectTab(
+    sourcePaneId: string,
+    tabId: string,
+    targetPaneId: string,
+    targetIndex: number
+  ) {
+    await applyProjectWorkspace(
+      moveProjectTab(projectWorkspaceRef.current, sourcePaneId, tabId, targetPaneId, targetIndex)
+    );
+  }
+
   async function handleProjectLayoutChange(layout: ProjectPaneNode, activePaneId: string) {
     const activeProject = getActiveProject(projectWorkspaceRef.current);
     if (!activeProject) {
@@ -486,6 +498,9 @@ export function App() {
         onDetachProjectTab={(paneId, tabId, sessionId) =>
           void handleDetachProjectTab(paneId, tabId, sessionId)
         }
+        onMoveProjectTab={(sourcePaneId, tabId, targetPaneId, targetIndex) =>
+          void handleMoveProjectTab(sourcePaneId, tabId, targetPaneId, targetIndex)
+        }
         onCloseSession={handleCloseSession}
         onCloseRenameDialog={() => setRenamingSessionId(null)}
         onCloseProjectNameDialog={() => setProjectNameDialog(null)}
@@ -585,6 +600,12 @@ type AppShellProps = {
   onActivatePane: (paneId: string) => void;
   onCloseProjectTab: (paneId: string, tabId: string) => void;
   onDetachProjectTab: (paneId: string, tabId: string, sessionId: string) => void;
+  onMoveProjectTab: (
+    sourcePaneId: string,
+    tabId: string,
+    targetPaneId: string,
+    targetIndex: number
+  ) => void;
   onCloseSession: (sessionId: string) => void;
   onCloseRenameDialog: () => void;
   onConfirmProjectName: (name: string) => void;
@@ -642,6 +663,7 @@ function AppShell({
   onActivatePane,
   onCloseProjectTab,
   onDetachProjectTab,
+  onMoveProjectTab,
   onCloseSession,
   onCloseRenameDialog,
   onConfirmProjectName,
@@ -757,6 +779,7 @@ function AppShell({
           onActivatePane={onActivatePane}
           onCloseProjectTab={onCloseProjectTab}
           onDetachProjectTab={onDetachProjectTab}
+          onMoveProjectTab={onMoveProjectTab}
           onProjectLayoutChange={onProjectLayoutChange}
           onRenameSession={onRenameSession}
           onResetSettingsGroup={onResetSettingsGroup}

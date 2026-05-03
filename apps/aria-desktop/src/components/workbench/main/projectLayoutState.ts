@@ -194,6 +194,87 @@ export function closeProjectTab(
   });
 }
 
+export function moveProjectTab(
+  workspace: ProjectWorkspace,
+  sourcePaneId: string,
+  tabId: string,
+  targetPaneId: string,
+  targetIndex: number
+): ProjectWorkspace {
+  const project = getActiveProject(workspace);
+  if (!project) {
+    return workspace;
+  }
+
+  const sourcePane = findActivePane(project.layout, sourcePaneId);
+  const targetPane = findActivePane(project.layout, targetPaneId);
+  if (!sourcePane || !targetPane) {
+    return workspace;
+  }
+
+  const sourceIndex = sourcePane.tabs.findIndex((tab) => tab.tabId === tabId);
+  if (sourceIndex === -1) {
+    return workspace;
+  }
+
+  const movingTab = sourcePane.tabs[sourceIndex];
+  if (sourcePaneId === targetPaneId) {
+    const boundedTargetIndex = clampTabIndex(targetIndex, sourcePane.tabs.length);
+    const insertionIndex =
+      boundedTargetIndex > sourceIndex ? boundedTargetIndex - 1 : boundedTargetIndex;
+    if (insertionIndex === sourceIndex) {
+      return workspace;
+    }
+
+    const remainingTabs = sourcePane.tabs.filter((tab) => tab.tabId !== tabId);
+    const tabs = insertTabAt(remainingTabs, movingTab, insertionIndex);
+    const layout = updateLeaf(project.layout, sourcePaneId, (pane) => ({
+      ...pane,
+      activeTabId: tabId,
+      tabs
+    }));
+
+    return updateProject(workspace, project.projectId, {
+      ...project,
+      activePaneId: sourcePaneId,
+      layout
+    });
+  }
+
+  const targetInsertionIndex = clampTabIndex(targetIndex, targetPane.tabs.length);
+  let sourcePaneIsEmpty = false;
+  const layoutWithMovedTab = updateLeaf(
+    updateLeaf(project.layout, sourcePaneId, (pane) => {
+      const nextTabs = pane.tabs.filter((tab) => tab.tabId !== tabId);
+      sourcePaneIsEmpty = nextTabs.length === 0;
+      return {
+        ...pane,
+        activeTabId:
+          pane.activeTabId === tabId
+            ? nextTabs[sourceIndex - 1]?.tabId ?? nextTabs[sourceIndex]?.tabId ?? null
+            : pane.activeTabId,
+        tabs: nextTabs
+      };
+    }),
+    targetPaneId,
+    (pane) => ({
+      ...pane,
+      activeTabId: tabId,
+      tabs: insertTabAt(pane.tabs, movingTab, targetInsertionIndex)
+    })
+  );
+  const layout =
+    sourcePaneIsEmpty && countPanes(project.layout) > 1
+      ? removePane(layoutWithMovedTab, sourcePaneId) ?? layoutWithMovedTab
+      : layoutWithMovedTab;
+
+  return updateProject(workspace, project.projectId, {
+    ...project,
+    activePaneId: targetPaneId,
+    layout: normalizePaneNode(layout)
+  });
+}
+
 export function splitActivePane(
   workspace: ProjectWorkspace,
   direction: PaneSplitDirection
@@ -352,6 +433,22 @@ function removePane(node: ProjectPaneNode, paneId: string): ProjectPaneNode | nu
     first,
     second
   };
+}
+
+function clampTabIndex(index: number, length: number): number {
+  if (!Number.isFinite(index)) {
+    return length;
+  }
+
+  return Math.min(length, Math.max(0, Math.trunc(index)));
+}
+
+function insertTabAt(
+  tabs: readonly ProjectTab[],
+  tab: ProjectTab,
+  index: number
+): readonly ProjectTab[] {
+  return [...tabs.slice(0, index), tab, ...tabs.slice(index)];
 }
 
 function countPanes(node: ProjectPaneNode): number {
