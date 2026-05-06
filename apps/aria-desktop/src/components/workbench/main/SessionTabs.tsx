@@ -97,6 +97,11 @@ type SessionTabsProps = {
     targetPaneId: string,
     targetIndex: number
   ) => void;
+  onMoveTabToNewWindow?: (
+    sourcePaneId: string,
+    tabId: string,
+    releasePoint: { x: number; y: number }
+  ) => void;
   onMoveTabPreviewChange?: (preview: SessionTabDragPreview) => void;
   onRenameTab?: (tabId: string, sessionId: string) => void;
   onSplitPane?: (direction: "horizontal" | "vertical") => void;
@@ -139,6 +144,7 @@ export function SessionTabs({
   onCloseTab,
   onDetachTab,
   onMoveTab,
+  onMoveTabToNewWindow,
   onMoveTabPreviewChange,
   onRenameTab,
   onSplitPane
@@ -303,10 +309,11 @@ export function SessionTabs({
   }
 
   function handleTabPointerDown(event: ReactPointerEvent<HTMLDivElement>, tabId: string) {
-    if (!onMoveTab || event.button !== 0 || isCloseButtonEvent(event)) {
+    if ((!onMoveTab && !onMoveTabToNewWindow) || event.button !== 0 || isCloseButtonEvent(event)) {
       return;
     }
 
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     const drag: PointerTabDrag = {
       cleanup: () => undefined,
       isDragging: false,
@@ -332,7 +339,9 @@ export function SessionTabs({
 
       moveEvent.preventDefault();
       drag.isDragging = true;
-      const dropTarget = getPointerDropTarget(moveEvent.clientX, moveEvent.clientY);
+      const dropTarget = isOutsideViewport(moveEvent.clientX, moveEvent.clientY)
+        ? null
+        : getPointerDropTarget(moveEvent.clientX, moveEvent.clientY);
       drag.targetPaneId = dropTarget?.paneId ?? null;
       drag.targetIndex = dropTarget?.index ?? null;
       updateDragPreview({
@@ -350,10 +359,20 @@ export function SessionTabs({
         return;
       }
 
-      if (drag.isDragging && drag.targetPaneId !== null && drag.targetIndex !== null) {
+      if (drag.isDragging && drag.targetPaneId !== null && drag.targetIndex !== null && onMoveTab) {
         upEvent.preventDefault();
         suppressNextTabClickRef.current = tabId;
         onMoveTab(drag.sourcePaneId, drag.tabId, drag.targetPaneId, drag.targetIndex);
+      } else if (drag.isDragging && isOutsideViewport(upEvent.clientX, upEvent.clientY)) {
+        upEvent.preventDefault();
+        suppressNextTabClickRef.current = tabId;
+        onMoveTabToNewWindow?.(drag.sourcePaneId, drag.tabId, {
+          x: upEvent.clientX,
+          y: upEvent.clientY
+        });
+      } else if (!drag.isDragging) {
+        suppressNextTabClickRef.current = tabId;
+        onSelectTab(drag.tabId);
       }
       drag.cleanup();
       pointerDragRef.current = null;
@@ -633,6 +652,10 @@ export function SessionTabs({
 function isCloseButtonEvent(event: ReactPointerEvent<HTMLDivElement>): boolean {
   const target = event.target;
   return target instanceof Element && Boolean(target.closest(".tab-close-button"));
+}
+
+function isOutsideViewport(clientX: number, clientY: number): boolean {
+  return clientX < 0 || clientY < 0 || clientX > window.innerWidth || clientY > window.innerHeight;
 }
 
 function getPointerDropTarget(

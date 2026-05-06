@@ -93,6 +93,7 @@ function createWorkspace(): ProjectWorkspace {
         projectId: "project-a",
         name: "Default Project",
         activePaneId: "pane-a",
+        extraWindows: [],
         layout: {
           type: "leaf",
           paneId: "pane-a",

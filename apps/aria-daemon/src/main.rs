@@ -8,13 +8,14 @@ use crate::settings::SettingsStore;
 use anyhow::{Context, Result};
 use aria_core::{init_observability, AppRole, BootstrapContext};
 use aria_ipc::{
-    AttachViewerRequest, ContractError, CreateLocalSessionRequest, DaemonClient, DaemonInfo,
-    DetachViewerRequest, EmptyResponse, GetProjectWorkspaceRequest, GetSettingsRequest,
-    HealthRequest, HealthResponse, ListSessionsRequest, ProjectSelector, ReadScrollbackRequest,
-    ReorderProjectsRequest, RenameProjectRequest, RenameSessionRequest, ResetSettingsGroupRequest,
-    RpcRequest, RpcResponse, SessionResizeRequest, SessionSelector, SessionWriteRequest,
-    SetSessionBackgroundRequest, UpdateProjectLayoutRequest, UpdateSettingsRequest,
-    ViewerAckRequest, DEFAULT_DAEMON_ADDR,
+    AttachViewerRequest, CloseProjectWindowRequest, ContractError, CreateLocalSessionRequest,
+    CreateProjectWindowFromTabRequest, DaemonClient, DaemonInfo, DetachViewerRequest,
+    EmptyResponse, GetProjectWorkspaceRequest, GetSettingsRequest, HealthRequest, HealthResponse,
+    ListSessionsRequest, ProjectSelector, ReadScrollbackRequest, ReorderProjectsRequest,
+    RenameProjectRequest, RenameSessionRequest, ResetSettingsGroupRequest, RpcRequest,
+    RpcResponse, SessionResizeRequest, SessionSelector, SessionWriteRequest,
+    SetSessionBackgroundRequest, UpdateProjectLayoutRequest, UpdateProjectWindowGeometryRequest,
+    UpdateProjectWindowLayoutRequest, UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, HealthStatus, SessionId};
 use aria_session::SessionManager;
@@ -374,6 +375,76 @@ async fn dispatch_request(request: RpcRequest, state: Arc<DaemonState>) -> RpcRe
                                     %session_id,
                                     error = %error,
                                     "failed to close unreferenced session after layout update"
+                                );
+                            }
+                        }
+                        ok(response)
+                    }
+                    Err(error) => err(ContractError::Unavailable(error.to_string())),
+                }
+            }
+            Err(error) => err(error),
+        },
+        "projects.createWindowFromTab" => {
+            match decode::<CreateProjectWindowFromTabRequest>(request.payload) {
+                Ok(payload) => match state.projects.create_window_from_tab(payload).await {
+                    Ok(response) => ok(response),
+                    Err(error) => err(ContractError::Unavailable(error.to_string())),
+                },
+                Err(error) => err(error),
+            }
+        }
+        "projects.updateWindowLayout" => {
+            match decode::<UpdateProjectWindowLayoutRequest>(request.payload) {
+                Ok(payload) => {
+                    let close_session_if_unused = payload.close_session_if_unused;
+                    match state.projects.update_window_layout(payload).await {
+                        Ok(response) => {
+                            if let Some(session_id) = close_session_if_unused {
+                                if let Err(error) =
+                                    try_close_session_if_unused(state.as_ref(), session_id).await
+                                {
+                                    warn!(
+                                        %session_id,
+                                        error = %error,
+                                        "failed to close unreferenced session after window layout update"
+                                    );
+                                }
+                            }
+                            ok(response)
+                        }
+                        Err(error) => err(ContractError::Unavailable(error.to_string())),
+                    }
+                }
+                Err(error) => err(error),
+            }
+        }
+        "projects.updateWindowGeometry" => {
+            match decode::<UpdateProjectWindowGeometryRequest>(request.payload) {
+                Ok(payload) => match state.projects.update_window_geometry(payload).await {
+                    Ok(response) => ok(response),
+                    Err(error) => err(ContractError::Unavailable(error.to_string())),
+                },
+                Err(error) => err(error),
+            }
+        }
+        "projects.closeWindow" => match decode::<CloseProjectWindowRequest>(request.payload) {
+            Ok(payload) => {
+                let session_ids = state
+                    .projects
+                    .project_window_session_references(payload.project_id, payload.window_id)
+                    .await
+                    .unwrap_or_default();
+                match state.projects.close_window(payload).await {
+                    Ok(response) => {
+                        for session_id in session_ids {
+                            if let Err(error) =
+                                try_close_session_if_unused(state.as_ref(), session_id).await
+                            {
+                                warn!(
+                                    %session_id,
+                                    error = %error,
+                                    "failed to close unreferenced session after project window close"
                                 );
                             }
                         }

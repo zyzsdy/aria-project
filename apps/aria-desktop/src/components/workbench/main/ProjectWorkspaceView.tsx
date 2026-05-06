@@ -63,6 +63,11 @@ type ProjectWorkspaceViewProps = {
     targetPaneId: string,
     targetIndex: number
   ) => void;
+  onMoveTabToNewWindow: (
+    sourcePaneId: string,
+    tabId: string,
+    releasePoint: { x: number; y: number }
+  ) => void;
   onRenameSession: (sessionId: string) => void;
   onSelectTab: (paneId: string, tabId: string) => void;
   onSelectSettingsGroup: (group: SettingsGroup) => void;
@@ -92,6 +97,7 @@ export function ProjectWorkspaceView({
   onResetSettingsGroup,
   onDetachTab,
   onMoveTab,
+  onMoveTabToNewWindow,
   onRenameSession,
   onSelectTab,
   onSelectSettingsGroup,
@@ -128,6 +134,7 @@ export function ProjectWorkspaceView({
         onResetSettingsGroup={onResetSettingsGroup}
         onDetachTab={onDetachTab}
         onMoveTab={onMoveTab}
+        onMoveTabToNewWindow={onMoveTabToNewWindow}
         onMoveTabPreviewChange={setTabDragPreview}
         onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
@@ -169,6 +176,7 @@ function PaneNodeView({
   onResetSettingsGroup,
   onDetachTab,
   onMoveTab,
+  onMoveTabToNewWindow,
   onMoveTabPreviewChange,
   onRenameSession,
   onSelectTab,
@@ -200,6 +208,7 @@ function PaneNodeView({
         onResetSettingsGroup={onResetSettingsGroup}
         onDetachTab={onDetachTab}
         onMoveTab={onMoveTab}
+        onMoveTabToNewWindow={onMoveTabToNewWindow}
         onMoveTabPreviewChange={onMoveTabPreviewChange}
         onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
@@ -275,6 +284,7 @@ function PaneNodeView({
         onResetSettingsGroup={onResetSettingsGroup}
         onDetachTab={onDetachTab}
         onMoveTab={onMoveTab}
+        onMoveTabToNewWindow={onMoveTabToNewWindow}
         onMoveTabPreviewChange={onMoveTabPreviewChange}
         onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
@@ -312,6 +322,7 @@ function PaneNodeView({
         onResetSettingsGroup={onResetSettingsGroup}
         onDetachTab={onDetachTab}
         onMoveTab={onMoveTab}
+        onMoveTabToNewWindow={onMoveTabToNewWindow}
         onMoveTabPreviewChange={onMoveTabPreviewChange}
         onRenameSession={onRenameSession}
         onSelectTab={onSelectTab}
@@ -350,6 +361,11 @@ type ProjectPaneViewProps = {
     targetPaneId: string,
     targetIndex: number
   ) => void;
+  onMoveTabToNewWindow: (
+    sourcePaneId: string,
+    tabId: string,
+    releasePoint: { x: number; y: number }
+  ) => void;
   onMoveTabPreviewChange: (preview: SessionTabDragPreview) => void;
   onRenameSession: (sessionId: string) => void;
   onSelectTab: (paneId: string, tabId: string) => void;
@@ -380,6 +396,7 @@ function ProjectPaneView({
   onResetSettingsGroup,
   onDetachTab,
   onMoveTab,
+  onMoveTabToNewWindow,
   onMoveTabPreviewChange,
   onRenameSession,
   onSelectTab,
@@ -414,6 +431,7 @@ function ProjectPaneView({
           onCreateSessionWithProfile={onCreateSessionWithProfile}
           onDetachTab={(tabId, sessionId) => onDetachTab(pane.paneId, tabId, sessionId)}
           onMoveTab={onMoveTab}
+          onMoveTabToNewWindow={onMoveTabToNewWindow}
           onMoveTabPreviewChange={onMoveTabPreviewChange}
           onRenameTab={(_tabId, sessionId) => onRenameSession(sessionId)}
           onSelectTab={(tabId) => onSelectTab(pane.paneId, tabId)}

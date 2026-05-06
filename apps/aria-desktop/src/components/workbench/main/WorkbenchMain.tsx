@@ -16,6 +16,7 @@ type WorkbenchMainProps = {
   busy: boolean;
   defaultProfileId: string;
   projectWorkspace: ProjectWorkspace;
+  projectWindowId?: string | null;
   profiles: readonly ShellProfile[];
   sessions: SessionSummary[];
   settings: AppSettings;
@@ -36,6 +37,11 @@ type WorkbenchMainProps = {
     targetPaneId: string,
     targetIndex: number
   ) => void;
+  onMoveProjectTabToNewWindow?: (
+    sourcePaneId: string,
+    tabId: string,
+    releasePoint: { x: number; y: number }
+  ) => void;
   onProjectLayoutChange: (layout: ProjectPaneNode, activePaneId: string) => void;
   onRenameSession: (sessionId: string) => void;
   onSelectProjectTab: (paneId: string, tabId: string) => void;
@@ -49,6 +55,7 @@ export function WorkbenchMain({
   busy,
   defaultProfileId,
   projectWorkspace,
+  projectWindowId = null,
   profiles,
   sessions,
   settings,
@@ -64,6 +71,7 @@ export function WorkbenchMain({
   onCloseProjectTab,
   onDetachProjectTab,
   onMoveProjectTab,
+  onMoveProjectTabToNewWindow = () => undefined,
   onProjectLayoutChange,
   onRenameSession,
   onSelectProjectTab,
@@ -73,16 +81,24 @@ export function WorkbenchMain({
   onResetSettingsGroup
 }: WorkbenchMainProps) {
   const activeProject = getActiveProject(projectWorkspace);
+  const activeWindow = activeProject
+    ? projectWindowId === null
+      ? {
+          activePaneId: activeProject.activePaneId,
+          layout: activeProject.layout
+        }
+      : activeProject.extraWindows.find((window) => window.windowId === projectWindowId) ?? null
+    : null;
 
   return (
     <section className="main-shell">
       <section className="main-content-shell">
-        {activeProject ? (
+        {activeWindow ? (
           <ProjectWorkspaceView
-            activePaneId={activeProject.activePaneId}
+            activePaneId={activeWindow.activePaneId}
             busy={busy}
             defaultProfileId={defaultProfileId}
-            layout={activeProject.layout}
+            layout={activeWindow.layout}
             onCreateSession={onCreateSession}
             onCreateSessionWithProfile={onCreateSessionWithProfile}
             onActivatePane={onActivatePane}
@@ -90,6 +106,7 @@ export function WorkbenchMain({
             onDetachTab={onDetachProjectTab}
             onLayoutChange={onProjectLayoutChange}
             onMoveTab={onMoveProjectTab}
+            onMoveTabToNewWindow={onMoveProjectTabToNewWindow}
             onRenameSession={onRenameSession}
             onResetSettingsGroup={onResetSettingsGroup}
             onSelectTab={onSelectProjectTab}

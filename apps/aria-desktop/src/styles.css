@@ -1002,6 +1002,11 @@ input[type="range"] {
   grid-template-columns: var(--rail-width) minmax(0, 1fr);
 }
 
+.workbench-project-window {
+  grid-template-rows: 32px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .activity-rail {
   display: flex;
   flex-direction: column;

@@ -4,6 +4,7 @@ import type {
   ProjectPane,
   ProjectPaneNode,
   ProjectTab,
+  ProjectWindowGeometry,
   ProjectSummary,
   ProjectWorkspace,
   SessionSummary
@@ -18,6 +19,7 @@ export function createEmptyProjectWorkspace(): ProjectWorkspace {
     projectId: createId(),
     name: "Default Project",
     activePaneId: paneId,
+    extraWindows: [],
     layout: {
       type: "leaf",
       paneId,
@@ -341,6 +343,117 @@ export function updateProjectLayout(
   });
 }
 
+type CreateProjectWindowFromTabOptions = {
+  geometry: ProjectWindowGeometry;
+  projectId: string;
+  sourcePaneId: string;
+  sourceWindowId: string | null;
+  tabId: string;
+  windowId: string;
+};
+
+export function createProjectWindowFromTab(
+  workspace: ProjectWorkspace,
+  options: CreateProjectWindowFromTabOptions
+): ProjectWorkspace {
+  const project = workspace.projects.find((candidate) => candidate.projectId === options.projectId);
+  if (!project) {
+    return workspace;
+  }
+
+  const source = getProjectWindowSlot(project, options.sourceWindowId);
+  if (!source) {
+    return workspace;
+  }
+
+  const extracted = extractTabFromLayout(source.layout, options.sourcePaneId, options.tabId);
+  if (!extracted.tab) {
+    return workspace;
+  }
+
+  const sourceLayout =
+    extracted.sourcePaneIsEmpty && countPanes(source.layout) > 1
+      ? removePane(extracted.layout, options.sourcePaneId) ?? extracted.layout
+      : extracted.layout;
+  const normalizedSourceLayout = normalizePaneNode(sourceLayout);
+  const nextSourceActivePaneId = paneExists(normalizedSourceLayout, source.activePaneId)
+    ? source.activePaneId
+    : findFirstPaneId(normalizedSourceLayout);
+  const windowPaneId = createId();
+  const nextWindow = {
+    windowId: options.windowId,
+    activePaneId: windowPaneId,
+    geometry: options.geometry,
+    layout: {
+      type: "leaf",
+      paneId: windowPaneId,
+      activeTabId: extracted.tab.tabId,
+      tabs: [extracted.tab]
+    }
+  } satisfies ProjectSummary["extraWindows"][number];
+
+  return updateProject(workspace, project.projectId, {
+    ...project,
+    activePaneId:
+      options.sourceWindowId === null ? nextSourceActivePaneId : project.activePaneId,
+    layout: options.sourceWindowId === null ? normalizedSourceLayout : project.layout,
+    extraWindows: [
+      ...project.extraWindows.map((window) =>
+        window.windowId === options.sourceWindowId
+          ? {
+              ...window,
+              activePaneId: nextSourceActivePaneId,
+              layout: normalizedSourceLayout
+            }
+          : window
+      ),
+      nextWindow
+    ]
+  });
+}
+
+export function updateProjectWindowLayout(
+  workspace: ProjectWorkspace,
+  projectId: string,
+  windowId: string | null,
+  update: { activePaneId: string; layout: ProjectPaneNode }
+): ProjectWorkspace {
+  const project = workspace.projects.find((candidate) => candidate.projectId === projectId);
+  if (!project) {
+    return workspace;
+  }
+
+  const layout = normalizePaneNode(update.layout);
+  const activePaneId = paneExists(layout, update.activePaneId)
+    ? update.activePaneId
+    : findFirstPaneId(layout);
+
+  if (windowId === null) {
+    return updateProject(workspace, projectId, {
+      ...project,
+      activePaneId,
+      layout
+    });
+  }
+
+  if (!project.extraWindows.some((window) => window.windowId === windowId)) {
+    return workspace;
+  }
+
+  return updateProject(workspace, projectId, {
+    ...project,
+    extraWindows: project.extraWindows.map((window) =>
+      window.windowId === windowId
+        ? {
+            ...window,
+            activePaneId,
+            layout
+          }
+        : window
+    )
+  });
+}
+
 export function clampSplitRatio(ratio: number): number {
   return Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, ratio));
 }
@@ -379,6 +492,68 @@ function updateProject(
     projects: workspace.projects.map((project) =>
       project.projectId === projectId ? nextProject : project
     )
+  };
+}
+
+function getProjectWindowSlot(
+  project: ProjectSummary,
+  windowId: string | null
+): { activePaneId: string; layout: ProjectPaneNode } | null {
+  if (windowId === null) {
+    return {
+      activePaneId: project.activePaneId,
+      layout: project.layout
+    };
+  }
+
+  return project.extraWindows.find((window) => window.windowId === windowId) ?? null;
+}
+
+function extractTabFromLayout(
+  node: ProjectPaneNode,
+  paneId: string,
+  tabId: string
+): { layout: ProjectPaneNode; sourcePaneIsEmpty: boolean; tab: ProjectTab | null } {
+  if (node.type === "leaf") {
+    if (node.paneId !== paneId) {
+      return { layout: node, sourcePaneIsEmpty: false, tab: null };
+    }
+
+    const tabIndex = node.tabs.findIndex((tab) => tab.tabId === tabId);
+    if (tabIndex === -1) {
+      return { layout: node, sourcePaneIsEmpty: false, tab: null };
+    }
+
+    const tab = node.tabs[tabIndex];
+    const tabs = node.tabs.filter((candidate) => candidate.tabId !== tabId);
+    return {
+      layout: {
+        ...node,
+        activeTabId:
+          node.activeTabId === tabId
+            ? tabs[tabIndex - 1]?.tabId ?? tabs[tabIndex]?.tabId ?? null
+            : node.activeTabId,
+        tabs
+      },
+      sourcePaneIsEmpty: tabs.length === 0,
+      tab
+    };
+  }
+
+  const first = extractTabFromLayout(node.first, paneId, tabId);
+  if (first.tab) {
+    return {
+      layout: { ...node, first: first.layout },
+      sourcePaneIsEmpty: first.sourcePaneIsEmpty,
+      tab: first.tab
+    };
+  }
+
+  const second = extractTabFromLayout(node.second, paneId, tabId);
+  return {
+    layout: { ...node, second: second.layout },
+    sourcePaneIsEmpty: second.sourcePaneIsEmpty,
+    tab: second.tab
   };
 }
 

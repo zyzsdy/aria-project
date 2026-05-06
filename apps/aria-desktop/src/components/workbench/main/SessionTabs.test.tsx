@@ -360,6 +360,82 @@ describe("SessionTabs structure", () => {
     expect(container!.querySelector(".tab-dragging")).toBeNull();
   });
 
+  it("selects a tab from pointer release when pointer capture prevents a button click", async () => {
+    const onSelectTab = vi.fn();
+    root = createRoot(container!);
+
+    act(() => {
+      root!.render(
+        <SessionTabs
+          busy={false}
+          defaultProfileId="builtin:powershell"
+          onCloseTab={() => undefined}
+          onCreateSession={() => undefined}
+          onCreateSessionWithProfile={() => undefined}
+          onMoveTab={() => undefined}
+          onSelectTab={onSelectTab}
+          paneId="pane-a"
+          profiles={[]}
+          selectedTabId="tab-a"
+          tabs={[
+            { tabId: "tab-a", title: "Alpha" },
+            { tabId: "tab-b", title: "Beta" }
+          ]}
+        />
+      );
+    });
+
+    const tabs = container!.querySelectorAll(".tab");
+    act(() => {
+      tabs[1]!.dispatchEvent(createPointerEvent("pointerdown", 1, 10, 10));
+    });
+    act(() => {
+      window.dispatchEvent(createPointerEvent("pointerup", 1, 10, 10));
+    });
+
+    expect(onSelectTab).toHaveBeenCalledWith("tab-b");
+  });
+
+  it("moves a tab to a new window when released outside the current viewport", async () => {
+    const onMoveTabToNewWindow = vi.fn();
+    root = createRoot(container!);
+
+    act(() => {
+      root!.render(
+        <SessionTabs
+          busy={false}
+          defaultProfileId="builtin:powershell"
+          onCloseTab={() => undefined}
+          onCreateSession={() => undefined}
+          onCreateSessionWithProfile={() => undefined}
+          onMoveTab={() => undefined}
+          onMoveTabToNewWindow={onMoveTabToNewWindow}
+          onSelectTab={() => undefined}
+          paneId="pane-a"
+          profiles={[]}
+          selectedTabId="tab-a"
+          tabs={[{ tabId: "tab-a", title: "Alpha" }]}
+        />
+      );
+    });
+
+    const tab = container!.querySelector(".tab")!;
+    act(() => {
+      tab.dispatchEvent(createPointerEvent("pointerdown", 1, 10, 10));
+    });
+    act(() => {
+      window.dispatchEvent(createPointerEvent("pointermove", 1, window.innerWidth + 40, 20));
+    });
+    act(() => {
+      window.dispatchEvent(createPointerEvent("pointerup", 1, window.innerWidth + 40, 20));
+    });
+
+    expect(onMoveTabToNewWindow).toHaveBeenCalledWith("pane-a", "tab-a", {
+      x: window.innerWidth + 40,
+      y: 20
+    });
+  });
+
   it("renders a shared cross-pane drop marker for the target pane", async () => {
     root = createRoot(container!);
 

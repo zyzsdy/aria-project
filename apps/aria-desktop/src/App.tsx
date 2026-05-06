@@ -1,11 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   type AppSettings,
+  type CreateProjectWindowFromTabResponse,
   type CreateLocalSessionResponse,
   type PaneSplitDirection,
   type ProjectPaneNode,
   type ProjectSummary,
   type ProjectTab,
+  type ProjectWindow,
+  type ProjectWindowGeometry,
   type ProjectWorkspace,
   type SessionMetadataDelta,
   type SessionStatus,
@@ -16,6 +19,7 @@ import {
   type ReorderProjectsRequest
 } from "@aria/types";
 import { startTransition, useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ModalDialog } from "./components/ModalDialog";
 import { AboutDialog } from "./components/workbench/AboutDialog";
 import { ActivityRail } from "./components/workbench/ActivityRail";
@@ -80,8 +84,14 @@ const APP_MESSAGES = defineMessages({
 });
 
 const CATALOG_SOURCES = [BUNDLED_CATALOG_SOURCE] as const;
+const PROJECT_WINDOW_LABEL_PREFIX = "project-window-";
+const PROJECT_WORKSPACE_UPDATED_EVENT = "project-workspace-updated";
+const EXTRA_WINDOW_DEFAULT_WIDTH = 900;
+const EXTRA_WINDOW_DEFAULT_HEIGHT = 620;
 
 export function App() {
+  const currentProjectWindowId = getCurrentProjectWindowId();
+  const isProjectWindow = currentProjectWindowId !== null;
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [projectWorkspace, setProjectWorkspace] = useState<ProjectWorkspace>(
     createEmptyProjectWorkspace
@@ -120,6 +130,74 @@ export function App() {
   useEffect(() => {
     projectWorkspaceRef.current = projectWorkspace;
   }, [projectWorkspace]);
+
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    let unsubscribe: (() => void) | null = null;
+    let disposed = false;
+
+    void appWindow
+      .listen<ProjectWorkspace>(PROJECT_WORKSPACE_UPDATED_EVENT, (event) => {
+        if (disposed) {
+          return;
+        }
+        projectWorkspaceRef.current = event.payload;
+        startTransition(() => {
+          setProjectWorkspace(event.payload);
+        });
+        if (isProjectWindow && !findProjectWindow(event.payload, currentProjectWindowId)) {
+          void closeCurrentTauriWindow();
+        }
+      })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+          return;
+        }
+        unsubscribe = unlisten;
+      })
+      .catch(logDesktopError);
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [currentProjectWindowId, isProjectWindow]);
+
+  useEffect(() => {
+    if (isProjectWindow) {
+      return;
+    }
+
+    void reconcileProjectWindows(projectWorkspace);
+  }, [isProjectWindow, projectWorkspace]);
+
+  useEffect(() => {
+    if (!isProjectWindow) {
+      return;
+    }
+
+    const appWindow = getCurrentWindow();
+    let saveTimer: ReturnType<typeof window.setTimeout> | null = null;
+    const scheduleSaveGeometry = () => {
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
+      saveTimer = window.setTimeout(() => {
+        void persistCurrentProjectWindowGeometry(currentProjectWindowId);
+      }, 250);
+    };
+
+    const moved = appWindow.onMoved(scheduleSaveGeometry);
+    const resized = appWindow.onResized(scheduleSaveGeometry);
+    return () => {
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
+      void moved.then((unlisten) => unlisten());
+      void resized.then((unlisten) => unlisten());
+    };
+  }, [currentProjectWindowId, isProjectWindow]);
 
   useEffect(() => {
     if (openSidebar !== "sessions") {
@@ -198,8 +276,9 @@ export function App() {
       });
       projectWorkspaceRef.current = nextWorkspace;
       if (sessionToEnsure) {
-        await persistActiveProjectLayout(nextWorkspace);
+        await persistProjectWindowLayout(nextWorkspace, null);
       }
+      await broadcastProjectWorkspace(nextWorkspace);
     } catch (error) {
       logDesktopError(error);
     } finally {
@@ -210,13 +289,15 @@ export function App() {
   async function applyProjectWorkspace(
     nextWorkspace: ProjectWorkspace,
     persist = true,
-    closeSessionIfUnused?: string | null
+    closeSessionIfUnused?: string | null,
+    projectWindowId: string | null = currentProjectWindowId
   ) {
     projectWorkspaceRef.current = nextWorkspace;
     setProjectWorkspace(nextWorkspace);
     if (persist) {
-      await persistActiveProjectLayout(nextWorkspace, { closeSessionIfUnused });
+      await persistProjectWindowLayout(nextWorkspace, projectWindowId, { closeSessionIfUnused });
     }
+    await broadcastProjectWorkspace(nextWorkspace);
   }
 
   async function handleCloseSession(sessionId: string) {
@@ -237,7 +318,9 @@ export function App() {
       return;
     }
     await applyProjectWorkspace(
-      addSessionTabToActivePane(projectWorkspaceRef.current, session)
+      transformProjectWindowLayout(projectWorkspaceRef.current, currentProjectWindowId, (workspace) =>
+        addSessionTabToActivePane(workspace, session)
+      )
     );
   }
 
@@ -329,6 +412,7 @@ export function App() {
       const nextWorkspace = await invoke<ProjectWorkspace>("delete_project", { projectId });
       projectWorkspaceRef.current = nextWorkspace;
       setProjectWorkspace(nextWorkspace);
+      await broadcastProjectWorkspace(nextWorkspace);
     } catch (error) {
       logDesktopError(error);
     }
@@ -336,25 +420,32 @@ export function App() {
 
   async function handleActivatePane(paneId: string) {
     const activeProject = getActiveProject(projectWorkspaceRef.current);
-    if (!activeProject || activeProject.activePaneId === paneId) {
+    const activeWindow = getProjectWindowView(activeProject, currentProjectWindowId);
+    if (!activeProject || !activeWindow || activeWindow.activePaneId === paneId) {
       return;
     }
-    const nextWorkspace = {
-      ...projectWorkspaceRef.current,
-      projects: projectWorkspaceRef.current.projects.map((project) =>
-        project.projectId === activeProject.projectId ? { ...project, activePaneId: paneId } : project
-      )
-    };
+    const nextWorkspace = updateProjectWindowView(
+      projectWorkspaceRef.current,
+      activeProject.projectId,
+      currentProjectWindowId,
+      activeWindow.layout,
+      paneId
+    );
     await applyProjectWorkspace(nextWorkspace);
   }
 
   async function handleSelectProjectTab(paneId: string, tabId: string) {
-    await applyProjectWorkspace(selectProjectTab(projectWorkspaceRef.current, paneId, tabId));
+    await applyProjectWorkspace(
+      transformProjectWindowLayout(projectWorkspaceRef.current, currentProjectWindowId, (workspace) =>
+        selectProjectTab(workspace, paneId, tabId)
+      )
+    );
   }
 
   async function handleCloseProjectTab(paneId: string, tabId: string) {
     const activeProject = getActiveProject(projectWorkspaceRef.current);
-    const closingTab = activeProject ? findProjectTab(activeProject.layout, paneId, tabId) : null;
+    const activeWindow = getProjectWindowView(activeProject, currentProjectWindowId);
+    const closingTab = activeWindow ? findProjectTab(activeWindow.layout, paneId, tabId) : null;
     const closingSession = closingTab?.sessionId
       ? sessions.find((session) => session.sessionId === closingTab.sessionId)
       : null;
@@ -366,7 +457,9 @@ export function App() {
       closingTerminalTabIdsRef.current.add(tabId);
     }
     await applyProjectWorkspace(
-      closeProjectTab(projectWorkspaceRef.current, paneId, tabId),
+      transformProjectWindowLayout(projectWorkspaceRef.current, currentProjectWindowId, (workspace) =>
+        closeProjectTab(workspace, paneId, tabId)
+      ),
       true,
       closeSessionIfUnused
     );
@@ -379,14 +472,20 @@ export function App() {
     }
 
     await applyProjectWorkspace(
-      closeProjectTab(projectWorkspaceRef.current, paneId, tabId),
+      transformProjectWindowLayout(projectWorkspaceRef.current, currentProjectWindowId, (workspace) =>
+        closeProjectTab(workspace, paneId, tabId)
+      ),
       true,
       null
     );
   }
 
   async function handleSplitPane(paneId: string, direction: PaneSplitDirection) {
-    await applyProjectWorkspace(splitPane(projectWorkspaceRef.current, paneId, direction));
+    await applyProjectWorkspace(
+      transformProjectWindowLayout(projectWorkspaceRef.current, currentProjectWindowId, (workspace) =>
+        splitPane(workspace, paneId, direction)
+      )
+    );
   }
 
   async function handleMoveProjectTab(
@@ -396,7 +495,9 @@ export function App() {
     targetIndex: number
   ) {
     await applyProjectWorkspace(
-      moveProjectTab(projectWorkspaceRef.current, sourcePaneId, tabId, targetPaneId, targetIndex)
+      transformProjectWindowLayout(projectWorkspaceRef.current, currentProjectWindowId, (workspace) =>
+        moveProjectTab(workspace, sourcePaneId, tabId, targetPaneId, targetIndex)
+      )
     );
   }
 
@@ -405,15 +506,46 @@ export function App() {
     if (!activeProject) {
       return;
     }
-    const nextWorkspace = {
-      ...projectWorkspaceRef.current,
-      projects: projectWorkspaceRef.current.projects.map((project) =>
-        project.projectId === activeProject.projectId
-          ? { ...project, layout, activePaneId }
-          : project
-      )
-    };
+    const nextWorkspace = updateProjectWindowView(
+      projectWorkspaceRef.current,
+      activeProject.projectId,
+      currentProjectWindowId,
+      layout,
+      activePaneId
+    );
     await applyProjectWorkspace(nextWorkspace);
+  }
+
+  async function handleMoveProjectTabToNewWindow(
+    sourcePaneId: string,
+    tabId: string,
+    releasePoint: { x: number; y: number }
+  ) {
+    const activeProject = getActiveProject(projectWorkspaceRef.current);
+    if (!activeProject) {
+      return;
+    }
+
+    try {
+      const response = await invoke<CreateProjectWindowFromTabResponse>(
+        "create_project_window_from_tab",
+        {
+          request: {
+            projectId: activeProject.projectId,
+            sourceWindowId: currentProjectWindowId,
+            sourcePaneId,
+            tabId,
+            geometry: await createProjectWindowGeometry(releasePoint)
+          }
+        }
+      );
+      projectWorkspaceRef.current = response.workspace;
+      setProjectWorkspace(response.workspace);
+      await openProjectWindow(response.window);
+      await broadcastProjectWorkspace(response.workspace);
+    } catch (error) {
+      logDesktopError(error);
+    }
   }
 
   function handleRenameSession(sessionId: string) {
@@ -476,7 +608,13 @@ export function App() {
             : [...current, session]
         );
       });
-      await applyProjectWorkspace(addSessionTabToActivePane(projectWorkspaceRef.current, session));
+      await applyProjectWorkspace(
+        transformProjectWindowLayout(
+          projectWorkspaceRef.current,
+          currentProjectWindowId,
+          (workspace) => addSessionTabToActivePane(workspace, session)
+        )
+      );
     } catch (error) {
       setSessionLaunchError(describeDesktopError(error));
       logDesktopError(error);
@@ -503,8 +641,62 @@ export function App() {
 
   async function handleOpenSettingsTab(title: string) {
     await applyProjectWorkspace(
-      openHtmlTabInActiveProject(projectWorkspaceRef.current, "settings", title)
+      transformProjectWindowLayout(projectWorkspaceRef.current, currentProjectWindowId, (workspace) =>
+        openHtmlTabInActiveProject(workspace, "settings", title)
+      )
     );
+  }
+
+  async function handleCloseCurrentProjectWindow() {
+    if (!currentProjectWindowId) {
+      await closeCurrentTauriWindow();
+      return;
+    }
+
+    const activeProject = getActiveProject(projectWorkspaceRef.current);
+    if (!activeProject) {
+      await closeCurrentTauriWindow();
+      return;
+    }
+
+    try {
+      const nextWorkspace = await invoke<ProjectWorkspace>("close_project_window", {
+        request: {
+          projectId: activeProject.projectId,
+          windowId: currentProjectWindowId
+        }
+      });
+      projectWorkspaceRef.current = nextWorkspace;
+      setProjectWorkspace(nextWorkspace);
+      await broadcastProjectWorkspace(nextWorkspace);
+    } catch (error) {
+      logDesktopError(error);
+    } finally {
+      await closeCurrentTauriWindow();
+    }
+  }
+
+  async function persistCurrentProjectWindowGeometry(windowId: string) {
+    const activeProject = getActiveProject(projectWorkspaceRef.current);
+    if (!activeProject || !activeProject.extraWindows.some((window) => window.windowId === windowId)) {
+      return;
+    }
+
+    try {
+      const geometry = await readCurrentProjectWindowGeometry();
+      const nextWorkspace = await invoke<ProjectWorkspace>("update_project_window_geometry", {
+        request: {
+          projectId: activeProject.projectId,
+          windowId,
+          geometry
+        }
+      });
+      projectWorkspaceRef.current = nextWorkspace;
+      setProjectWorkspace(nextWorkspace);
+      await broadcastProjectWorkspace(nextWorkspace);
+    } catch (error) {
+      logDesktopError(error);
+    }
   }
 
   return (
@@ -515,6 +707,7 @@ export function App() {
       systemLocale={systemLocale}
     >
       <AppShell
+        currentProjectWindowId={currentProjectWindowId}
         busy={busy}
         isAboutDialogOpen={isAboutDialogOpen}
         isToolMenuOpen={isToolMenuOpen}
@@ -529,6 +722,10 @@ export function App() {
         onMoveProjectTab={(sourcePaneId, tabId, targetPaneId, targetIndex) =>
           void handleMoveProjectTab(sourcePaneId, tabId, targetPaneId, targetIndex)
         }
+        onMoveProjectTabToNewWindow={(sourcePaneId, tabId, releasePoint) =>
+          void handleMoveProjectTabToNewWindow(sourcePaneId, tabId, releasePoint)
+        }
+        onCloseProjectWindow={() => void handleCloseCurrentProjectWindow()}
         onCloseSession={handleCloseSession}
         onCloseRenameDialog={() => setRenamingSessionId(null)}
         onCloseProjectNameDialog={() => setProjectNameDialog(null)}
@@ -617,6 +814,7 @@ export function App() {
 
 type AppShellProps = {
   busy: boolean;
+  currentProjectWindowId: string | null;
   defaultProfileId: string;
   isAboutDialogOpen: boolean;
   isProfileMenuOpen: boolean;
@@ -635,6 +833,12 @@ type AppShellProps = {
     targetPaneId: string,
     targetIndex: number
   ) => void;
+  onMoveProjectTabToNewWindow: (
+    sourcePaneId: string,
+    tabId: string,
+    releasePoint: { x: number; y: number }
+  ) => void;
+  onCloseProjectWindow: () => void;
   onCloseSession: (sessionId: string) => void;
   onCloseRenameDialog: () => void;
   onConfirmProjectName: (name: string) => void;
@@ -681,6 +885,7 @@ type AppShellProps = {
 
 function AppShell({
   busy,
+  currentProjectWindowId,
   defaultProfileId,
   isAboutDialogOpen,
   isProfileMenuOpen,
@@ -694,6 +899,8 @@ function AppShell({
   onCloseProjectTab,
   onDetachProjectTab,
   onMoveProjectTab,
+  onMoveProjectTabToNewWindow,
+  onCloseProjectWindow,
   onCloseSession,
   onCloseRenameDialog,
   onConfirmProjectName,
@@ -738,6 +945,7 @@ function AppShell({
   toolNotice
 }: AppShellProps) {
   const t = useT();
+  const isProjectWindow = currentProjectWindowId !== null;
 
   function handleOpenSettings() {
     onToolMenuOpenChange(false);
@@ -763,21 +971,27 @@ function AppShell({
       }}
     >
       <main
-        className={`workbench ${openSidebar ? "workbench-sidebar-open" : "workbench-sidebar-closed"}`}
+        className={
+          isProjectWindow
+            ? "workbench workbench-project-window"
+            : `workbench ${openSidebar ? "workbench-sidebar-open" : "workbench-sidebar-closed"}`
+        }
         data-theme={settings.appearance.themePreset}
       >
-        <TitleBar />
-        <ActivityRail
-          isToolMenuOpen={isToolMenuOpen}
-          onAbout={handleOpenAbout}
-          onCheckForUpdates={handleCheckForUpdates}
-          onOpenSidebarChange={onOpenSidebarChange}
-          onSettings={handleOpenSettings}
-          onToolMenuOpenChange={onToolMenuOpenChange}
-          openSidebar={openSidebar}
-        />
+        <TitleBar onClose={isProjectWindow ? onCloseProjectWindow : undefined} />
+        {!isProjectWindow ? (
+          <ActivityRail
+            isToolMenuOpen={isToolMenuOpen}
+            onAbout={handleOpenAbout}
+            onCheckForUpdates={handleCheckForUpdates}
+            onOpenSidebarChange={onOpenSidebarChange}
+            onSettings={handleOpenSettings}
+            onToolMenuOpenChange={onToolMenuOpenChange}
+            openSidebar={openSidebar}
+          />
+        ) : null}
 
-        {openSidebar ? (
+        {!isProjectWindow && openSidebar ? (
           <SidebarHost
             busy={busy}
             defaultProfileId={defaultProfileId}
@@ -812,6 +1026,7 @@ function AppShell({
           onCloseProjectTab={onCloseProjectTab}
           onDetachProjectTab={onDetachProjectTab}
           onMoveProjectTab={onMoveProjectTab}
+          onMoveProjectTabToNewWindow={onMoveProjectTabToNewWindow}
           onProjectLayoutChange={onProjectLayoutChange}
           onRenameSession={onRenameSession}
           onResetSettingsGroup={onResetSettingsGroup}
@@ -825,12 +1040,13 @@ function AppShell({
           shouldCloseSessionIfUnusedOnDispose={shouldCloseSessionIfUnusedOnDispose}
           onUpdateSettings={onUpdateSettings}
           profiles={profiles}
+          projectWindowId={currentProjectWindowId}
           projectWorkspace={projectWorkspace}
           selectedSettingsGroup={selectedSettingsGroup}
           sessions={sessions}
           settings={settings}
         />
-        <UtilityPanelHost isVisible={false} />
+        {!isProjectWindow ? <UtilityPanelHost isVisible={false} /> : null}
       </main>
 
       {toolNotice ? (
@@ -898,12 +1114,30 @@ function isLiveSessionStatus(status: SessionStatus) {
   return status === "running" || status === "background";
 }
 
-async function persistActiveProjectLayout(
+async function persistProjectWindowLayout(
   workspace: ProjectWorkspace,
+  windowId: string | null,
   options?: { closeSessionIfUnused?: string | null }
 ) {
   const activeProject = getActiveProject(workspace);
   if (!activeProject) {
+    return;
+  }
+
+  if (windowId !== null) {
+    const projectWindow = activeProject.extraWindows.find((window) => window.windowId === windowId);
+    if (!projectWindow) {
+      return;
+    }
+    await invoke("update_project_window_layout", {
+      request: {
+        projectId: activeProject.projectId,
+        windowId,
+        activePaneId: projectWindow.activePaneId,
+        layout: projectWindow.layout,
+        closeSessionIfUnused: options?.closeSessionIfUnused ?? null
+      }
+    });
     return;
   }
 
@@ -917,8 +1151,108 @@ async function persistActiveProjectLayout(
   });
 }
 
+function transformProjectWindowLayout(
+  workspace: ProjectWorkspace,
+  windowId: string | null,
+  transform: (workspace: ProjectWorkspace) => ProjectWorkspace
+): ProjectWorkspace {
+  if (windowId === null) {
+    return transform(workspace);
+  }
+
+  const activeProject = getActiveProject(workspace);
+  const projectWindow = activeProject?.extraWindows.find((window) => window.windowId === windowId);
+  if (!activeProject || !projectWindow) {
+    return workspace;
+  }
+
+  const temporaryWorkspace: ProjectWorkspace = {
+    activeProjectId: activeProject.projectId,
+    projects: [
+      {
+        ...activeProject,
+        activePaneId: projectWindow.activePaneId,
+        layout: projectWindow.layout,
+        extraWindows: []
+      }
+    ]
+  };
+  const transformedProject = getActiveProject(transform(temporaryWorkspace));
+  if (!transformedProject) {
+    return workspace;
+  }
+
+  return updateProjectWindowView(
+    workspace,
+    activeProject.projectId,
+    windowId,
+    transformedProject.layout,
+    transformedProject.activePaneId
+  );
+}
+
+function updateProjectWindowView(
+  workspace: ProjectWorkspace,
+  projectId: string,
+  windowId: string | null,
+  layout: ProjectPaneNode,
+  activePaneId: string
+): ProjectWorkspace {
+  return {
+    ...workspace,
+    projects: workspace.projects.map((project) => {
+      if (project.projectId !== projectId) {
+        return project;
+      }
+
+      if (windowId === null) {
+        return {
+          ...project,
+          activePaneId,
+          layout
+        };
+      }
+
+      return {
+        ...project,
+        extraWindows: project.extraWindows.map((window) =>
+          window.windowId === windowId
+            ? {
+                ...window,
+                activePaneId,
+                layout
+              }
+            : window
+        )
+      };
+    })
+  };
+}
+
+function getProjectWindowView(
+  project: ProjectSummary | null,
+  windowId: string | null
+): { activePaneId: string; layout: ProjectPaneNode } | null {
+  if (!project) {
+    return null;
+  }
+
+  if (windowId === null) {
+    return {
+      activePaneId: project.activePaneId,
+      layout: project.layout
+    };
+  }
+
+  return project.extraWindows.find((window) => window.windowId === windowId) ?? null;
+}
+
 function projectWorkspaceHasNoTabs(workspace: ProjectWorkspace) {
-  return workspace.projects.every((project) => paneTabCount(project.layout) === 0);
+  return workspace.projects.every(
+    (project) =>
+      paneTabCount(project.layout) === 0 &&
+      project.extraWindows.every((window) => paneTabCount(window.layout) === 0)
+  );
 }
 
 function paneTabCount(node: ProjectPaneNode): number {
@@ -964,6 +1298,146 @@ function findProjectTab(node: ProjectPaneNode, paneId: string, tabId: string): P
   }
 
   return findProjectTab(node.first, paneId, tabId) ?? findProjectTab(node.second, paneId, tabId);
+}
+
+function getCurrentProjectWindowId(): string | null {
+  const label = getCurrentWindow().label;
+  if (label?.startsWith(PROJECT_WINDOW_LABEL_PREFIX)) {
+    return label.slice(PROJECT_WINDOW_LABEL_PREFIX.length);
+  }
+
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return new URLSearchParams(window.location.search).get("projectWindowId");
+}
+
+function findProjectWindow(workspace: ProjectWorkspace, windowId: string | null) {
+  if (!windowId) {
+    return null;
+  }
+
+  return (
+    getActiveProject(workspace)?.extraWindows.find((window) => window.windowId === windowId) ?? null
+  );
+}
+
+async function createProjectWindowGeometry(releasePoint: {
+  x: number;
+  y: number;
+}): Promise<ProjectWindowGeometry> {
+  const currentPosition = await getCurrentWindow().outerPosition();
+  return {
+    x: currentPosition.x + releasePoint.x,
+    y: currentPosition.y + releasePoint.y,
+    width: EXTRA_WINDOW_DEFAULT_WIDTH,
+    height: EXTRA_WINDOW_DEFAULT_HEIGHT,
+    maximized: false
+  };
+}
+
+async function readCurrentProjectWindowGeometry(): Promise<ProjectWindowGeometry> {
+  const appWindow = getCurrentWindow();
+  const [position, size, maximized] = await Promise.all([
+    appWindow.outerPosition(),
+    appWindow.outerSize(),
+    appWindow.isMaximized()
+  ]);
+  return {
+    x: position.x,
+    y: position.y,
+    width: size.width,
+    height: size.height,
+    maximized
+  };
+}
+
+async function reconcileProjectWindows(workspace: ProjectWorkspace) {
+  const activeProject = getActiveProject(workspace);
+  if (!activeProject) {
+    return;
+  }
+
+  try {
+    const { getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
+    const windows = await getAllWebviewWindows();
+    const desiredLabels = new Set(
+      activeProject.extraWindows.map((window) => getProjectWindowLabel(window.windowId))
+    );
+
+    await Promise.all(
+      windows
+        .filter(
+          (window) =>
+            window.label.startsWith(PROJECT_WINDOW_LABEL_PREFIX) && !desiredLabels.has(window.label)
+        )
+        .map((window) => window.close())
+    );
+
+    const existingLabels = new Set(windows.map((window) => window.label));
+    await Promise.all(
+      activeProject.extraWindows
+        .filter((window) => !existingLabels.has(getProjectWindowLabel(window.windowId)))
+        .map((window) => openProjectWindow(window))
+    );
+  } catch (error) {
+    logDesktopError(error);
+  }
+}
+
+async function openProjectWindow(projectWindow: ProjectWindow) {
+  const label = getProjectWindowLabel(projectWindow.windowId);
+  const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+  const existing = await WebviewWindow.getByLabel(label);
+  if (existing) {
+    await existing.setFocus();
+    return;
+  }
+
+  const webviewWindow = new WebviewWindow(label, {
+    decorations: false,
+    focus: true,
+    height: projectWindow.geometry.height,
+    minHeight: 420,
+    minWidth: 720,
+    preventOverflow: true,
+    resizable: true,
+    title: "Aria Terminal",
+    url: `/?projectWindowId=${projectWindow.windowId}`,
+    width: projectWindow.geometry.width,
+    x: projectWindow.geometry.x,
+    y: projectWindow.geometry.y
+  });
+  if (projectWindow.geometry.maximized) {
+    await webviewWindow.once("tauri://created", () => {
+      void webviewWindow.maximize();
+    });
+  }
+}
+
+async function broadcastProjectWorkspace(workspace: ProjectWorkspace) {
+  try {
+    const { getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
+    const windows = await getAllWebviewWindows();
+    await Promise.all(
+      windows.map((window) => window.emit(PROJECT_WORKSPACE_UPDATED_EVENT, workspace))
+    );
+  } catch (error) {
+    logDesktopError(error);
+  }
+}
+
+async function closeCurrentTauriWindow() {
+  try {
+    await getCurrentWindow().close();
+  } catch (error) {
+    logDesktopError(error);
+  }
+}
+
+function getProjectWindowLabel(windowId: string) {
+  return `${PROJECT_WINDOW_LABEL_PREFIX}${windowId}`;
 }
 
 function patchSessionMetadata(

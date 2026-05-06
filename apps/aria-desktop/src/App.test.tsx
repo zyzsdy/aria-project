@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectWorkspace, SessionSummary } from "@aria/types";
 import { createPlatformDefaultSettings } from "./settings/appSettings";
 
-const { invokeMock } = vi.hoisted(() => ({
+const { currentWindowLabel, invokeMock } = vi.hoisted(() => ({
+  currentWindowLabel: { value: "main" },
   invokeMock: vi.fn()
 }));
 
@@ -17,19 +18,46 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     close: vi.fn(),
+    emit: vi.fn(async () => undefined),
     isMaximized: vi.fn(async () => false),
+    label: currentWindowLabel.value,
+    listen: vi.fn(async () => () => undefined),
     minimize: vi.fn(),
+    onMoved: vi.fn(async () => () => undefined),
     onResized: vi.fn(async () => () => undefined),
+    outerPosition: vi.fn(async () => ({ x: 0, y: 0 })),
+    outerSize: vi.fn(async () => ({ width: 900, height: 620 })),
     toggleMaximize: vi.fn()
   })
 }));
 
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getAllWebviewWindows: vi.fn(async () => []),
+  WebviewWindow: class {
+    label: string;
+
+    constructor(label: string) {
+      this.label = label;
+    }
+
+    static getByLabel = vi.fn(async () => null);
+
+    close = vi.fn(async () => undefined);
+    emit = vi.fn(async () => undefined);
+    maximize = vi.fn(async () => undefined);
+    once = vi.fn(async () => () => undefined);
+    setFocus = vi.fn(async () => undefined);
+  }
+}));
+
 vi.mock("./components/workbench/main/TerminalTabSurface", () => ({
   TerminalTabSurface: ({
+    isActive,
     onStreamDetached,
     sessionId,
     shouldCloseSessionIfUnusedOnDispose
   }: {
+    isActive: boolean;
     onStreamDetached: (sessionId: string) => void;
     sessionId: string;
     shouldCloseSessionIfUnusedOnDispose: () => boolean;
@@ -42,7 +70,11 @@ vi.mock("./components/workbench/main/TerminalTabSurface", () => ({
       },
       [onStreamDetached, sessionId, shouldCloseSessionIfUnusedOnDispose]
     );
-    return null;
+    return (
+      <div className="mock-terminal-surface" data-active={isActive} data-session-id={sessionId}>
+        {isActive ? sessionId : null}
+      </div>
+    );
   }
 }));
 
@@ -88,6 +120,7 @@ describe("App", () => {
 
   beforeEach(async () => {
     invokeMock.mockReset();
+    currentWindowLabel.value = "main";
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     AppComponent = (await import("./App")).App;
   });
@@ -602,7 +635,8 @@ describe("App", () => {
                   paneId: "pane-b",
                   activeTabId: null,
                   tabs: []
-                }
+                },
+                extraWindows: []
               }
             ]
           };
@@ -1104,6 +1138,121 @@ describe("App", () => {
     });
   });
 
+  it("persists tab selection inside a project window", async () => {
+    currentWindowLabel.value = "project-window-window-a";
+    const settings = createPlatformDefaultSettings("windows");
+    const alphaSession = createSessionSummary("session-a", "Alpha");
+    const betaSession = createSessionSummary("session-b", "Beta");
+    type PersistedProjectWindowLayoutRequest = {
+      activePaneId: string;
+      layout: ProjectWorkspace["projects"][number]["layout"];
+      projectId: string;
+      windowId: string;
+    };
+    const updateRequests: PersistedProjectWindowLayoutRequest[] = [];
+    let workspace = createProjectWorkspace({
+      extraWindows: [
+        {
+          windowId: "window-a",
+          activePaneId: "window-pane-a",
+          geometry: {
+            x: 100,
+            y: 100,
+            width: 900,
+            height: 620,
+            maximized: false
+          },
+          layout: {
+            type: "leaf",
+            paneId: "window-pane-a",
+            activeTabId: "tab-a",
+            tabs: [
+              {
+                kind: "terminal",
+                pageId: null,
+                sessionId: "session-a",
+                tabId: "tab-a",
+                title: "Alpha"
+              },
+              {
+                kind: "terminal",
+                pageId: null,
+                sessionId: "session-b",
+                tabId: "tab-b",
+                title: "Beta"
+              }
+            ]
+          }
+        }
+      ]
+    });
+
+    invokeMock.mockImplementation(async (command: string, payload?: Record<string, unknown>) => {
+      switch (command) {
+        case "get_app_settings":
+          return settings;
+        case "list_sessions":
+          return [alphaSession, betaSession];
+        case "get_project_workspace":
+          return workspace;
+        case "update_project_window_layout":
+          {
+            const request = payload?.request as PersistedProjectWindowLayoutRequest;
+            updateRequests.push(request);
+            workspace = {
+              ...workspace,
+              projects: workspace.projects.map((project) =>
+                project.projectId === request.projectId
+                  ? {
+                      ...project,
+                      extraWindows: project.extraWindows.map((window) =>
+                        window.windowId === request.windowId
+                          ? {
+                              ...window,
+                              activePaneId: request.activePaneId,
+                              layout: request.layout
+                            }
+                          : window
+                      )
+                    }
+                  : project
+              )
+            };
+            return workspace;
+          }
+        default:
+          throw new Error(`Unexpected invoke command: ${command}`);
+      }
+    });
+
+    renderApp();
+    await flushAsyncWork();
+
+    const tabs = await waitForTabCount(2);
+    expect(tabs[0].classList.contains("tab-active")).toBe(true);
+    act(() => {
+      tabs[1].dispatchEvent(createPointerEvent("pointerdown", 1, 0, 0));
+      window.dispatchEvent(createPointerEvent("pointerup", 1, 0, 0));
+      tabs[1].querySelector("button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForInvoke("update_project_window_layout");
+    await flushAsyncWork();
+
+    const persistedRequest = updateRequests[updateRequests.length - 1]!;
+    expect(persistedRequest.windowId).toBe("window-a");
+    expect(persistedRequest.activePaneId).toBe("window-pane-a");
+    expect(persistedRequest.layout).toMatchObject({
+      activeTabId: "tab-b",
+      paneId: "window-pane-a",
+      type: "leaf"
+    });
+    expect(
+      container
+        ?.querySelector('.mock-terminal-surface[data-active="true"]')
+        ?.getAttribute("data-session-id")
+    ).toBe("session-b");
+  });
+
   function renderApp() {
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -1271,7 +1420,8 @@ function createProjectWorkspace(
           activeTabId: null,
           tabs: []
         },
-        ...overrides
+        ...overrides,
+        extraWindows: overrides.extraWindows ?? []
       }
     ]
   };

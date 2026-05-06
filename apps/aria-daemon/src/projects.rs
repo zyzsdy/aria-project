@@ -1,10 +1,12 @@
 use anyhow::{anyhow, Context, Result};
 use aria_ipc::{
-    CreateProjectRequest, ProjectPane, ProjectPaneNode, ProjectSelector, ProjectSummary,
-    ProjectTabKind, ProjectWorkspace, ReorderProjectsRequest, RenameProjectRequest,
-    UpdateProjectLayoutRequest,
+    CloseProjectWindowRequest, CreateProjectRequest, CreateProjectWindowFromTabRequest,
+    CreateProjectWindowFromTabResponse, ProjectPane, ProjectPaneNode, ProjectSelector,
+    ProjectSummary, ProjectTab, ProjectTabKind, ProjectWindow, ProjectWorkspace,
+    ReorderProjectsRequest, RenameProjectRequest, UpdateProjectLayoutRequest,
+    UpdateProjectWindowGeometryRequest, UpdateProjectWindowLayoutRequest,
 };
-use aria_model::{PaneId, ProjectId, SessionId};
+use aria_model::{PaneId, ProjectId, ProjectTabId, SessionId, WindowId};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -126,6 +128,116 @@ impl ProjectStore {
         Ok(workspace.clone())
     }
 
+    pub async fn create_window_from_tab(
+        &self,
+        request: CreateProjectWindowFromTabRequest,
+    ) -> Result<CreateProjectWindowFromTabResponse> {
+        let mut workspace = self.workspace.write().await;
+        let project = workspace
+            .projects
+            .iter_mut()
+            .find(|project| project.project_id == request.project_id)
+            .ok_or_else(|| anyhow!("project not found"))?;
+        let tab = remove_tab_from_project_window(
+            project,
+            request.source_window_id,
+            request.source_pane_id,
+            request.tab_id,
+        )?
+        .ok_or_else(|| anyhow!("tab not found"))?;
+        let pane_id = PaneId::new();
+        let window = ProjectWindow {
+            window_id: WindowId::new(),
+            active_pane_id: pane_id,
+            geometry: request.geometry,
+            layout: ProjectPaneNode::Leaf(ProjectPane {
+                pane_id,
+                active_tab_id: Some(tab.tab_id),
+                tabs: vec![tab],
+            }),
+        };
+        project.extra_windows.push(window.clone());
+        save_workspace_file(&self.path, &workspace)?;
+        Ok(CreateProjectWindowFromTabResponse {
+            workspace: workspace.clone(),
+            window,
+        })
+    }
+
+    pub async fn update_window_layout(
+        &self,
+        request: UpdateProjectWindowLayoutRequest,
+    ) -> Result<ProjectWorkspace> {
+        let mut workspace = self.workspace.write().await;
+        let project = workspace
+            .projects
+            .iter_mut()
+            .find(|project| project.project_id == request.project_id)
+            .ok_or_else(|| anyhow!("project not found"))?;
+        let layout = reconcile_pane_node(request.layout);
+        if let Some(window_id) = request.window_id {
+            let window = project
+                .extra_windows
+                .iter_mut()
+                .find(|window| window.window_id == window_id)
+                .ok_or_else(|| anyhow!("project window not found"))?;
+            window.active_pane_id = request.active_pane_id;
+            window.layout = layout;
+            if !pane_exists(&window.layout, window.active_pane_id) {
+                window.active_pane_id = first_pane_id(&window.layout);
+            }
+        } else {
+            project.active_pane_id = request.active_pane_id;
+            project.layout = layout;
+            if !pane_exists(&project.layout, project.active_pane_id) {
+                project.active_pane_id = first_pane_id(&project.layout);
+            }
+        }
+        save_workspace_file(&self.path, &workspace)?;
+        Ok(workspace.clone())
+    }
+
+    pub async fn update_window_geometry(
+        &self,
+        request: UpdateProjectWindowGeometryRequest,
+    ) -> Result<ProjectWorkspace> {
+        let mut workspace = self.workspace.write().await;
+        let project = workspace
+            .projects
+            .iter_mut()
+            .find(|project| project.project_id == request.project_id)
+            .ok_or_else(|| anyhow!("project not found"))?;
+        let window = project
+            .extra_windows
+            .iter_mut()
+            .find(|window| window.window_id == request.window_id)
+            .ok_or_else(|| anyhow!("project window not found"))?;
+        window.geometry = request.geometry;
+        save_workspace_file(&self.path, &workspace)?;
+        Ok(workspace.clone())
+    }
+
+    pub async fn close_window(
+        &self,
+        request: CloseProjectWindowRequest,
+    ) -> Result<ProjectWorkspace> {
+        let mut workspace = self.workspace.write().await;
+        let project = workspace
+            .projects
+            .iter_mut()
+            .find(|project| project.project_id == request.project_id)
+            .ok_or_else(|| anyhow!("project not found"))?;
+        let original_len = project.extra_windows.len();
+        project
+            .extra_windows
+            .retain(|window| window.window_id != request.window_id);
+        if project.extra_windows.len() == original_len {
+            return Err(anyhow!("project window not found"));
+        }
+        save_workspace_file(&self.path, &workspace)?;
+        Ok(workspace.clone())
+    }
+
     pub async fn reorder(&self, request: ReorderProjectsRequest) -> Result<ProjectWorkspace> {
         let mut workspace = self.workspace.write().await;
         if request.project_ids.len() != workspace.projects.len() {
@@ -149,10 +261,31 @@ impl ProjectStore {
 
     pub async fn has_session_reference(&self, session_id: SessionId) -> bool {
         let workspace = self.workspace.read().await;
-        workspace
+        workspace.projects.iter().any(|project| {
+            pane_node_has_session_reference(&project.layout, session_id)
+                || project.extra_windows.iter().any(|window| {
+                    pane_node_has_session_reference(&window.layout, session_id)
+                })
+        })
+    }
+
+    pub async fn project_window_session_references(
+        &self,
+        project_id: ProjectId,
+        window_id: WindowId,
+    ) -> Result<Vec<SessionId>> {
+        let workspace = self.workspace.read().await;
+        let project = workspace
             .projects
             .iter()
-            .any(|project| pane_node_has_session_reference(&project.layout, session_id))
+            .find(|project| project.project_id == project_id)
+            .ok_or_else(|| anyhow!("project not found"))?;
+        let window = project
+            .extra_windows
+            .iter()
+            .find(|window| window.window_id == window_id)
+            .ok_or_else(|| anyhow!("project window not found"))?;
+        Ok(pane_node_session_references(&window.layout))
     }
 }
 
@@ -196,6 +329,7 @@ fn default_project(name: String) -> ProjectSummary {
             active_tab_id: None,
             tabs: Vec::new(),
         }),
+        extra_windows: Vec::new(),
     }
 }
 
@@ -209,6 +343,12 @@ fn reconcile_workspace(mut workspace: ProjectWorkspace) -> ProjectWorkspace {
         project.layout = reconcile_pane_node(project.layout.clone());
         if !pane_exists(&project.layout, project.active_pane_id) {
             project.active_pane_id = first_pane_id(&project.layout);
+        }
+        for window in &mut project.extra_windows {
+            window.layout = reconcile_pane_node(window.layout.clone());
+            if !pane_exists(&window.layout, window.active_pane_id) {
+                window.active_pane_id = first_pane_id(&window.layout);
+            }
         }
     }
 
@@ -268,6 +408,10 @@ fn first_pane_id(node: &ProjectPaneNode) -> PaneId {
 
 fn project_is_empty(project: &ProjectSummary) -> bool {
     pane_tab_count(&project.layout) == 0
+        && project
+            .extra_windows
+            .iter()
+            .all(|window| pane_tab_count(&window.layout) == 0)
 }
 
 fn pane_tab_count(node: &ProjectPaneNode) -> usize {
@@ -292,6 +436,174 @@ fn pane_node_has_session_reference(node: &ProjectPaneNode, session_id: SessionId
     }
 }
 
+fn pane_node_session_references(node: &ProjectPaneNode) -> Vec<SessionId> {
+    match node {
+        ProjectPaneNode::Leaf(pane) => pane
+            .tabs
+            .iter()
+            .filter_map(|tab| {
+                if tab.kind == ProjectTabKind::Terminal {
+                    tab.session_id
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        ProjectPaneNode::Split { first, second, .. } => {
+            let mut session_ids = pane_node_session_references(first);
+            session_ids.extend(pane_node_session_references(second));
+            session_ids
+        }
+    }
+}
+
+fn remove_tab_from_project_window(
+    project: &mut ProjectSummary,
+    source_window_id: Option<WindowId>,
+    source_pane_id: PaneId,
+    tab_id: ProjectTabId,
+) -> Result<Option<ProjectTab>> {
+    if let Some(window_id) = source_window_id {
+        let window = project
+            .extra_windows
+            .iter_mut()
+            .find(|window| window.window_id == window_id)
+            .ok_or_else(|| anyhow!("project window not found"))?;
+        let old_layout = window.layout.clone();
+        let (layout, tab, source_pane_is_empty) =
+            remove_tab_from_node(window.layout.clone(), source_pane_id, tab_id);
+        let layout = if tab.is_some() && source_pane_is_empty && count_panes(&old_layout) > 1 {
+            remove_pane(layout, source_pane_id).unwrap_or(old_layout)
+        } else {
+            layout
+        };
+        window.layout = reconcile_pane_node(layout);
+        if !pane_exists(&window.layout, window.active_pane_id) {
+            window.active_pane_id = first_pane_id(&window.layout);
+        }
+        return Ok(tab);
+    }
+
+    let old_layout = project.layout.clone();
+    let (layout, tab, source_pane_is_empty) =
+        remove_tab_from_node(project.layout.clone(), source_pane_id, tab_id);
+    let layout = if tab.is_some() && source_pane_is_empty && count_panes(&old_layout) > 1 {
+        remove_pane(layout, source_pane_id).unwrap_or(old_layout)
+    } else {
+        layout
+    };
+    project.layout = reconcile_pane_node(layout);
+    if !pane_exists(&project.layout, project.active_pane_id) {
+        project.active_pane_id = first_pane_id(&project.layout);
+    }
+    Ok(tab)
+}
+
+fn remove_tab_from_node(
+    node: ProjectPaneNode,
+    pane_id: PaneId,
+    tab_id: ProjectTabId,
+) -> (ProjectPaneNode, Option<ProjectTab>, bool) {
+    match node {
+        ProjectPaneNode::Leaf(mut pane) => {
+            if pane.pane_id != pane_id {
+                return (ProjectPaneNode::Leaf(pane), None, false);
+            }
+
+            let Some(index) = pane.tabs.iter().position(|tab| tab.tab_id == tab_id) else {
+                return (ProjectPaneNode::Leaf(pane), None, false);
+            };
+            let tab = pane.tabs.remove(index);
+            if pane.active_tab_id == Some(tab_id) {
+                pane.active_tab_id = pane
+                    .tabs
+                    .get(index.saturating_sub(1))
+                    .or_else(|| pane.tabs.get(index))
+                    .map(|tab| tab.tab_id);
+            }
+            let source_pane_is_empty = pane.tabs.is_empty();
+            (ProjectPaneNode::Leaf(pane), Some(tab), source_pane_is_empty)
+        }
+        ProjectPaneNode::Split {
+            split_id,
+            direction,
+            ratio,
+            first,
+            second,
+        } => {
+            let (first, tab, source_pane_is_empty) =
+                remove_tab_from_node(*first, pane_id, tab_id);
+            if tab.is_some() {
+                return (
+                    ProjectPaneNode::Split {
+                        split_id,
+                        direction,
+                        ratio,
+                        first: Box::new(first),
+                        second,
+                    },
+                    tab,
+                    source_pane_is_empty,
+                );
+            }
+
+            let (second, tab, source_pane_is_empty) =
+                remove_tab_from_node(*second, pane_id, tab_id);
+            (
+                ProjectPaneNode::Split {
+                    split_id,
+                    direction,
+                    ratio,
+                    first: Box::new(first),
+                    second: Box::new(second),
+                },
+                tab,
+                source_pane_is_empty,
+            )
+        }
+    }
+}
+
+fn remove_pane(node: ProjectPaneNode, pane_id: PaneId) -> Option<ProjectPaneNode> {
+    match node {
+        ProjectPaneNode::Leaf(pane) => {
+            if pane.pane_id == pane_id {
+                None
+            } else {
+                Some(ProjectPaneNode::Leaf(pane))
+            }
+        }
+        ProjectPaneNode::Split {
+            split_id,
+            direction,
+            ratio,
+            first,
+            second,
+        } => {
+            let first = remove_pane(*first, pane_id);
+            let second = remove_pane(*second, pane_id);
+            match (first, second) {
+                (Some(first), Some(second)) => Some(ProjectPaneNode::Split {
+                    split_id,
+                    direction,
+                    ratio,
+                    first: Box::new(first),
+                    second: Box::new(second),
+                }),
+                (Some(only), None) | (None, Some(only)) => Some(only),
+                (None, None) => None,
+            }
+        }
+    }
+}
+
+fn count_panes(node: &ProjectPaneNode) -> usize {
+    match node {
+        ProjectPaneNode::Leaf(_) => 1,
+        ProjectPaneNode::Split { first, second, .. } => count_panes(first) + count_panes(second),
+    }
+}
+
 fn clean_project_name(name: String) -> String {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -305,7 +617,8 @@ fn clean_project_name(name: String) -> String {
 mod tests {
     use super::ProjectStore;
     use aria_ipc::{
-        HtmlPageId, ProjectPane, ProjectPaneNode, ProjectTab, ProjectTabKind,
+        CloseProjectWindowRequest, CreateProjectWindowFromTabRequest, HtmlPageId, ProjectPane,
+        ProjectPaneNode, ProjectTab, ProjectTabKind, ProjectWindowGeometry,
         UpdateProjectLayoutRequest,
     };
     use aria_model::{PaneId, ProjectTabId, SessionId};
@@ -512,6 +825,116 @@ mod tests {
         assert!(store.has_session_reference(referenced_session_id).await);
         assert!(!store.has_session_reference(html_only_session_id).await);
         assert!(!store.has_session_reference(missing_session_id).await);
+        remove_temp_projects(&path);
+    }
+
+    #[tokio::test]
+    async fn project_store_detects_session_references_inside_extra_windows() {
+        let path = temp_projects_path("extra-window-references");
+        let store = ProjectStore::load(&path).expect("load store");
+        let workspace = store.get().await;
+        let project_id = workspace.active_project_id;
+        let source_pane_id = PaneId::new();
+        let tab_id = ProjectTabId::new();
+        let session_id = SessionId::new();
+
+        store
+            .update_layout(UpdateProjectLayoutRequest {
+                project_id,
+                active_pane_id: source_pane_id,
+                close_session_if_unused: None,
+                layout: ProjectPaneNode::Leaf(ProjectPane {
+                    pane_id: source_pane_id,
+                    active_tab_id: Some(tab_id),
+                    tabs: vec![ProjectTab {
+                        kind: ProjectTabKind::Terminal,
+                        page_id: None,
+                        tab_id,
+                        title: "Shell".to_string(),
+                        session_id: Some(session_id),
+                    }],
+                }),
+            })
+            .await
+            .expect("seed project layout");
+
+        store
+            .create_window_from_tab(CreateProjectWindowFromTabRequest {
+                project_id,
+                source_window_id: None,
+                source_pane_id,
+                tab_id,
+                geometry: ProjectWindowGeometry {
+                    x: 32.0,
+                    y: 48.0,
+                    width: 900.0,
+                    height: 620.0,
+                    maximized: false,
+                },
+            })
+            .await
+            .expect("create project window");
+
+        assert!(store.has_session_reference(session_id).await);
+        remove_temp_projects(&path);
+    }
+
+    #[tokio::test]
+    async fn project_store_closes_extra_window_and_removes_its_session_references() {
+        let path = temp_projects_path("close-extra-window");
+        let store = ProjectStore::load(&path).expect("load store");
+        let workspace = store.get().await;
+        let project_id = workspace.active_project_id;
+        let source_pane_id = PaneId::new();
+        let tab_id = ProjectTabId::new();
+        let session_id = SessionId::new();
+
+        store
+            .update_layout(UpdateProjectLayoutRequest {
+                project_id,
+                active_pane_id: source_pane_id,
+                close_session_if_unused: None,
+                layout: ProjectPaneNode::Leaf(ProjectPane {
+                    pane_id: source_pane_id,
+                    active_tab_id: Some(tab_id),
+                    tabs: vec![ProjectTab {
+                        kind: ProjectTabKind::Terminal,
+                        page_id: None,
+                        tab_id,
+                        title: "Shell".to_string(),
+                        session_id: Some(session_id),
+                    }],
+                }),
+            })
+            .await
+            .expect("seed project layout");
+        let created = store
+            .create_window_from_tab(CreateProjectWindowFromTabRequest {
+                project_id,
+                source_window_id: None,
+                source_pane_id,
+                tab_id,
+                geometry: ProjectWindowGeometry {
+                    x: 32.0,
+                    y: 48.0,
+                    width: 900.0,
+                    height: 620.0,
+                    maximized: false,
+                },
+            })
+            .await
+            .expect("create project window");
+
+        let closed = store
+            .close_window(CloseProjectWindowRequest {
+                project_id,
+                window_id: created.window.window_id,
+            })
+            .await
+            .expect("close project window");
+
+        assert!(closed.projects[0].extra_windows.is_empty());
+        assert!(!store.has_session_reference(session_id).await);
         remove_temp_projects(&path);
     }
 

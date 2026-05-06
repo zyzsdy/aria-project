@@ -3,15 +3,18 @@
 use anyhow::{anyhow, Context, Result};
 use aria_core::{init_observability, AppRole, BootstrapContext};
 use aria_ipc::{
-    AppSettings, AttachViewerRequest, AttachViewerResponse, CreateLocalSessionRequest,
-    CreateLocalSessionResponse, CreateProjectRequest, DaemonClient, DetachViewerRequest,
-    GetProjectWorkspaceRequest, GetSettingsRequest, HealthRequest, HealthResponse,
-    ListSessionsRequest, ProjectSelector, ProjectSummary, ProjectWorkspace,
+    AppSettings, AttachViewerRequest, AttachViewerResponse, CloseProjectWindowRequest,
+    CreateLocalSessionRequest, CreateLocalSessionResponse, CreateProjectRequest,
+    CreateProjectWindowFromTabRequest, CreateProjectWindowFromTabResponse, DaemonClient,
+    DetachViewerRequest, GetProjectWorkspaceRequest, GetSettingsRequest, HealthRequest,
+    HealthResponse, ListSessionsRequest, ProjectSelector, ProjectSummary, ProjectWorkspace,
     ReorderProjectsRequest, RenameProjectRequest, RenameSessionRequest,
     ResetSettingsGroupRequest, RpcRequest, RpcResponse, SessionResizeRequest, SessionSelector,
     SessionSnapshot, SessionStreamFrame, SessionSummary, SessionWriteRequest,
     SetSessionBackgroundRequest, SettingsGroup, UpdateAppSettingsPayload,
-    UpdateProjectLayoutRequest, UpdateSettingsRequest, ViewerAckRequest, DEFAULT_DAEMON_ADDR,
+    UpdateProjectLayoutRequest, UpdateProjectWindowGeometryRequest,
+    UpdateProjectWindowLayoutRequest, UpdateSettingsRequest, ViewerAckRequest,
+    DEFAULT_DAEMON_ADDR,
 };
 use aria_model::{AppInfo, ProjectId, SessionId, TerminalSize, ViewerId};
 use serde::Serialize;
@@ -471,6 +474,78 @@ async fn update_project_layout(
 }
 
 #[tauri::command]
+async fn create_project_window_from_tab(
+    state: State<'_, DesktopState>,
+    request: CreateProjectWindowFromTabRequest,
+) -> Result<CreateProjectWindowFromTabResponse, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    state
+        .daemon
+        .client
+        .create_project_window_from_tab(request)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn update_project_window_layout(
+    state: State<'_, DesktopState>,
+    request: UpdateProjectWindowLayoutRequest,
+) -> Result<ProjectWorkspace, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    state
+        .daemon
+        .client
+        .update_project_window_layout(request)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn update_project_window_geometry(
+    state: State<'_, DesktopState>,
+    request: UpdateProjectWindowGeometryRequest,
+) -> Result<ProjectWorkspace, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    state
+        .daemon
+        .client
+        .update_project_window_geometry(request)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn close_project_window(
+    state: State<'_, DesktopState>,
+    request: CloseProjectWindowRequest,
+) -> Result<ProjectWorkspace, String> {
+    state
+        .daemon
+        .ensure_ready()
+        .await
+        .map_err(|error| error.to_string())?;
+    state
+        .daemon
+        .client
+        .close_project_window(request)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn reorder_projects(
     state: State<'_, DesktopState>,
     request: ReorderProjectsRequest,
@@ -557,6 +632,10 @@ fn main() -> Result<()> {
             delete_project,
             activate_project,
             update_project_layout,
+            create_project_window_from_tab,
+            update_project_window_layout,
+            update_project_window_geometry,
+            close_project_window,
             reorder_projects,
             get_about_runtime_info,
             open_external_url

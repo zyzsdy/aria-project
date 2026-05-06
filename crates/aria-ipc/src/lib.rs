@@ -1,6 +1,6 @@
 use aria_model::{
     AppInfo, CursorPosition, HealthStatus, PaneId, ProjectId, ProjectTabId, SessionId,
-    SessionStatus, SessionTransportKind, TerminalSize, ViewerId,
+    SessionStatus, SessionTransportKind, TerminalSize, ViewerId, WindowId,
 };
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -139,6 +139,25 @@ pub enum ProjectPaneNode {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectWindowGeometry {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    pub maximized: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectWindow {
+    pub window_id: WindowId,
+    pub active_pane_id: PaneId,
+    pub layout: ProjectPaneNode,
+    pub geometry: ProjectWindowGeometry,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSummary {
@@ -146,6 +165,8 @@ pub struct ProjectSummary {
     pub name: String,
     pub active_pane_id: PaneId,
     pub layout: ProjectPaneNode,
+    #[serde(default)]
+    pub extra_windows: Vec<ProjectWindow>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -192,6 +213,51 @@ pub struct UpdateProjectLayoutRequest {
     pub layout: ProjectPaneNode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub close_session_if_unused: Option<SessionId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateProjectWindowFromTabRequest {
+    pub project_id: ProjectId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_window_id: Option<WindowId>,
+    pub source_pane_id: PaneId,
+    pub tab_id: ProjectTabId,
+    pub geometry: ProjectWindowGeometry,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateProjectWindowFromTabResponse {
+    pub workspace: ProjectWorkspace,
+    pub window: ProjectWindow,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProjectWindowLayoutRequest {
+    pub project_id: ProjectId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_id: Option<WindowId>,
+    pub active_pane_id: PaneId,
+    pub layout: ProjectPaneNode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub close_session_if_unused: Option<SessionId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProjectWindowGeometryRequest {
+    pub project_id: ProjectId,
+    pub window_id: WindowId,
+    pub geometry: ProjectWindowGeometry,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloseProjectWindowRequest {
+    pub project_id: ProjectId,
+    pub window_id: WindowId,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1013,6 +1079,26 @@ pub trait ProjectService: Send + Sync {
         request: UpdateProjectLayoutRequest,
     ) -> Result<ProjectWorkspace, ContractError>;
 
+    async fn create_project_window_from_tab(
+        &self,
+        request: CreateProjectWindowFromTabRequest,
+    ) -> Result<CreateProjectWindowFromTabResponse, ContractError>;
+
+    async fn update_project_window_layout(
+        &self,
+        request: UpdateProjectWindowLayoutRequest,
+    ) -> Result<ProjectWorkspace, ContractError>;
+
+    async fn update_project_window_geometry(
+        &self,
+        request: UpdateProjectWindowGeometryRequest,
+    ) -> Result<ProjectWorkspace, ContractError>;
+
+    async fn close_project_window(
+        &self,
+        request: CloseProjectWindowRequest,
+    ) -> Result<ProjectWorkspace, ContractError>;
+
     async fn reorder_projects(
         &self,
         request: ReorderProjectsRequest,
@@ -1197,6 +1283,34 @@ impl DaemonClient {
         request: UpdateProjectLayoutRequest,
     ) -> Result<ProjectWorkspace, ClientError> {
         self.call("projects.updateLayout", &request).await
+    }
+
+    pub async fn create_project_window_from_tab(
+        &self,
+        request: CreateProjectWindowFromTabRequest,
+    ) -> Result<CreateProjectWindowFromTabResponse, ClientError> {
+        self.call("projects.createWindowFromTab", &request).await
+    }
+
+    pub async fn update_project_window_layout(
+        &self,
+        request: UpdateProjectWindowLayoutRequest,
+    ) -> Result<ProjectWorkspace, ClientError> {
+        self.call("projects.updateWindowLayout", &request).await
+    }
+
+    pub async fn update_project_window_geometry(
+        &self,
+        request: UpdateProjectWindowGeometryRequest,
+    ) -> Result<ProjectWorkspace, ClientError> {
+        self.call("projects.updateWindowGeometry", &request).await
+    }
+
+    pub async fn close_project_window(
+        &self,
+        request: CloseProjectWindowRequest,
+    ) -> Result<ProjectWorkspace, ClientError> {
+        self.call("projects.closeWindow", &request).await
     }
 
     pub async fn reorder_projects(
@@ -1645,6 +1759,7 @@ mod tests {
                         session_id: Some(session_id),
                     }],
                 }),
+                extra_windows: Vec::new(),
             }],
         };
 
@@ -1684,6 +1799,7 @@ mod tests {
                         session_id: None,
                     }],
                 }),
+                extra_windows: Vec::new(),
             }],
         };
 
@@ -1697,6 +1813,86 @@ mod tests {
         assert_eq!(pane.tabs[0].kind, super::ProjectTabKind::Html);
         assert_eq!(pane.tabs[0].page_id, Some(super::HtmlPageId::Settings));
         assert_eq!(pane.tabs[0].session_id, None);
+    }
+
+    #[test]
+    fn project_workspace_round_trips_with_extra_windows() {
+        let project_id = aria_model::ProjectId::new();
+        let main_pane_id = aria_model::PaneId::new();
+        let window_id = aria_model::WindowId::new();
+        let window_pane_id = aria_model::PaneId::new();
+        let tab_id = aria_model::ProjectTabId::new();
+        let session_id = SessionId::new();
+        let workspace = super::ProjectWorkspace {
+            active_project_id: project_id,
+            projects: vec![super::ProjectSummary {
+                project_id,
+                name: "Default Project".to_string(),
+                active_pane_id: main_pane_id,
+                layout: super::ProjectPaneNode::Leaf(super::ProjectPane {
+                    pane_id: main_pane_id,
+                    active_tab_id: None,
+                    tabs: Vec::new(),
+                }),
+                extra_windows: vec![super::ProjectWindow {
+                    window_id,
+                    active_pane_id: window_pane_id,
+                    geometry: super::ProjectWindowGeometry {
+                        x: 120.0,
+                        y: 160.0,
+                        width: 900.0,
+                        height: 620.0,
+                        maximized: false,
+                    },
+                    layout: super::ProjectPaneNode::Leaf(super::ProjectPane {
+                        pane_id: window_pane_id,
+                        active_tab_id: Some(tab_id),
+                        tabs: vec![super::ProjectTab {
+                            kind: super::ProjectTabKind::Terminal,
+                            page_id: None,
+                            tab_id,
+                            title: "Detached".to_string(),
+                            session_id: Some(session_id),
+                        }],
+                    }),
+                }],
+            }],
+        };
+
+        let json = serde_json::to_value(&workspace).expect("serialize project workspace");
+        assert!(json["projects"][0].get("extraWindows").is_some());
+        let decoded: super::ProjectWorkspace =
+            serde_json::from_value(json).expect("deserialize project workspace");
+
+        assert_eq!(decoded.projects[0].extra_windows[0].window_id, window_id);
+        assert_eq!(decoded.projects[0].extra_windows[0].geometry.width, 900.0);
+        let super::ProjectPaneNode::Leaf(pane) = &decoded.projects[0].extra_windows[0].layout
+        else {
+            panic!("expected extra window leaf pane");
+        };
+        assert_eq!(pane.tabs[0].session_id, Some(session_id));
+    }
+
+    #[test]
+    fn project_summary_defaults_extra_windows_for_legacy_payloads() {
+        let project_id = aria_model::ProjectId::new();
+        let pane_id = aria_model::PaneId::new();
+        let json = serde_json::json!({
+            "projectId": project_id,
+            "name": "Legacy",
+            "activePaneId": pane_id,
+            "layout": {
+                "type": "leaf",
+                "paneId": pane_id,
+                "activeTabId": null,
+                "tabs": []
+            }
+        });
+
+        let decoded: super::ProjectSummary =
+            serde_json::from_value(json).expect("deserialize legacy project");
+
+        assert!(decoded.extra_windows.is_empty());
     }
 
     #[test]

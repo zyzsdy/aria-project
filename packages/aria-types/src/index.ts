@@ -172,11 +172,27 @@ export interface ProjectPaneSplit {
 
 export type ProjectPaneNode = ProjectPane | ProjectPaneSplit;
 
+export interface ProjectWindowGeometry {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly maximized: boolean;
+}
+
+export interface ProjectWindow {
+  readonly windowId: string;
+  readonly activePaneId: string;
+  readonly layout: ProjectPaneNode;
+  readonly geometry: ProjectWindowGeometry;
+}
+
 export interface ProjectSummary {
   readonly projectId: string;
   readonly name: string;
   readonly activePaneId: string;
   readonly layout: ProjectPaneNode;
+  readonly extraWindows: readonly ProjectWindow[];
 }
 
 export interface ProjectWorkspace {
@@ -189,6 +205,38 @@ export interface UpdateProjectLayoutRequest {
   readonly activePaneId: string;
   readonly layout: ProjectPaneNode;
   readonly closeSessionIfUnused?: string | null;
+}
+
+export interface CreateProjectWindowFromTabRequest {
+  readonly projectId: string;
+  readonly sourceWindowId?: string | null;
+  readonly sourcePaneId: string;
+  readonly tabId: string;
+  readonly geometry: ProjectWindowGeometry;
+}
+
+export interface CreateProjectWindowFromTabResponse {
+  readonly workspace: ProjectWorkspace;
+  readonly window: ProjectWindow;
+}
+
+export interface UpdateProjectWindowLayoutRequest {
+  readonly projectId: string;
+  readonly windowId?: string | null;
+  readonly activePaneId: string;
+  readonly layout: ProjectPaneNode;
+  readonly closeSessionIfUnused?: string | null;
+}
+
+export interface UpdateProjectWindowGeometryRequest {
+  readonly projectId: string;
+  readonly windowId: string;
+  readonly geometry: ProjectWindowGeometry;
+}
+
+export interface CloseProjectWindowRequest {
+  readonly projectId: string;
+  readonly windowId: string;
 }
 
 export interface ReorderProjectsRequest {

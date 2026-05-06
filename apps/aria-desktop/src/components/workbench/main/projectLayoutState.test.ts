@@ -4,9 +4,11 @@ import {
   addSessionTabToActivePane,
   clampSplitRatio,
   closeProjectTab,
+  createProjectWindowFromTab,
   createEmptyProjectWorkspace,
   openHtmlTabInActiveProject,
   moveProjectTab,
+  updateProjectWindowLayout,
   selectProject,
   selectProjectTab,
   splitActivePane,
@@ -311,6 +313,7 @@ describe("project layout state", () => {
           projectId: "project-a",
           name: "Default Project",
           activePaneId: "pane-c",
+          extraWindows: [],
           layout: {
             type: "split",
             splitId: "split-root",
@@ -377,6 +380,7 @@ describe("project layout state", () => {
           projectId: "project-a",
           name: "Default Project",
           activePaneId: "pane-a",
+          extraWindows: [],
           layout: {
             type: "leaf",
             paneId: "pane-a",
@@ -544,6 +548,86 @@ describe("project layout state", () => {
       expect(updated.projects[0].layout.ratio).toBe(0.85);
     }
   });
+
+  it("creates an extra window by removing a tab from the source pane", () => {
+    const tabA = terminalTab("tab-a", "session-a");
+    const tabB = terminalTab("tab-b", "session-b");
+    const workspace = createWorkspaceWithSplit({
+      activeProjectId: "project-a",
+      activePaneId: "pane-a",
+      firstTabs: [tabA],
+      firstActiveTabId: "tab-a",
+      secondTabs: [tabB],
+      secondActiveTabId: "tab-b"
+    });
+
+    const next = createProjectWindowFromTab(workspace, {
+      geometry: { x: 100, y: 120, width: 900, height: 620, maximized: false },
+      projectId: "project-a",
+      sourcePaneId: "pane-a",
+      sourceWindowId: null,
+      tabId: "tab-a",
+      windowId: "window-a"
+    });
+
+    expect(next.projects[0].layout).toEqual({
+      type: "leaf",
+      paneId: "pane-b",
+      activeTabId: "tab-b",
+      tabs: [tabB]
+    });
+    expect(next.projects[0].extraWindows).toHaveLength(1);
+    expect(next.projects[0].extraWindows[0]).toMatchObject({
+      activePaneId: expect.any(String),
+      geometry: { x: 100, y: 120, width: 900, height: 620, maximized: false },
+      windowId: "window-a"
+    });
+    expect(next.projects[0].extraWindows[0].layout).toMatchObject({
+      type: "leaf",
+      activeTabId: "tab-a",
+      tabs: [tabA]
+    });
+  });
+
+  it("updates only the requested extra window layout", () => {
+    const workspace = createProjectWindowFromTab(
+      createWorkspaceWithSplit({
+        activeProjectId: "project-a",
+        activePaneId: "pane-a",
+        firstTabs: [terminalTab("tab-a", "session-a")],
+        firstActiveTabId: "tab-a",
+        secondTabs: [],
+        secondActiveTabId: null
+      }),
+      {
+        geometry: { x: 10, y: 20, width: 900, height: 620, maximized: false },
+        projectId: "project-a",
+        sourcePaneId: "pane-a",
+        sourceWindowId: null,
+        tabId: "tab-a",
+        windowId: "window-a"
+      }
+    );
+    const windowPaneId = workspace.projects[0].extraWindows[0].activePaneId;
+
+    const next = updateProjectWindowLayout(workspace, "project-a", "window-a", {
+      activePaneId: windowPaneId,
+      layout: {
+        type: "split",
+        splitId: "window-split",
+        direction: "vertical",
+        ratio: 0.95,
+        first: workspace.projects[0].extraWindows[0].layout,
+        second: { type: "leaf", paneId: "extra-pane", activeTabId: null, tabs: [] }
+      }
+    });
+
+    expect(next.projects[0].layout).toBe(workspace.projects[0].layout);
+    expect(next.projects[0].extraWindows[0].layout.type).toBe("split");
+    if (next.projects[0].extraWindows[0].layout.type === "split") {
+      expect(next.projects[0].extraWindows[0].layout.ratio).toBe(0.85);
+    }
+  });
 });
 
 type CreateWorkspaceWithSplitOptions = {
@@ -574,6 +658,7 @@ function createWorkspaceWithSplit({
         projectId: activeProjectId,
         name: "Default Project",
         activePaneId,
+        extraWindows: [],
         layout: {
           type: "split",
           splitId: "split-a",

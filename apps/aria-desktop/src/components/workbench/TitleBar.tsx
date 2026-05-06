@@ -2,7 +2,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-export function TitleBar() {
+type TitleBarProps = {
+  onClose?: () => void;
+};
+
+export function TitleBar({ onClose }: TitleBarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const appWindow = getCurrentWindow();
 
@@ -42,7 +46,13 @@ export function TitleBar() {
         </button>
         <button
           className="title-bar-btn title-bar-btn-close"
-          onClick={() => appWindow.close()}
+          onClick={() => {
+            if (onClose) {
+              onClose();
+              return;
+            }
+            void appWindow.close();
+          }}
           type="button"
         >
           <X size={14} strokeWidth={1.5} />
